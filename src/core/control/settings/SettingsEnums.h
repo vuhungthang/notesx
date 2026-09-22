@@ -89,6 +89,31 @@ enum IconTheme {
     ICON_THEME_LUCIDE = 1,
 };
 
+/**
+ * Plan 002: the workspace is the top-level presentation mode.
+ *
+ * Focus is the default for new profiles: a compact toolbar and reduced chrome.
+ * Classic is the pre-existing behaviour: the user's configurable toolbar and
+ * menubar preference.
+ *
+ * The serialized names are stable and must not change: "focus" and "classic".
+ */
+enum class WorkspaceMode {
+    FOCUS = 0,
+    CLASSIC = 1,
+};
+
+constexpr auto workspaceModeToString(WorkspaceMode mode) -> const char* {
+    switch (mode) {
+        case WorkspaceMode::FOCUS:
+            return "focus";
+        case WorkspaceMode::CLASSIC:
+            return "classic";
+        default:
+            return "classic";
+    }
+}
+
 enum ThemeVariant { THEME_VARIANT_USE_SYSTEM, THEME_VARIANT_FORCE_LIGHT, THEME_VARIANT_FORCE_DARK };
 
 /**
@@ -209,3 +234,4 @@ EraserVisibility eraserVisibilityFromString(const std::string& eraserVisibilityS
 IconTheme iconThemeFromString(const std::string& iconThemeStr);
 ThemeVariant themeVariantFromString(const std::string& themeVariantStr);
 EmptyLastPageAppendType emptyLastPageAppendFromString(const std::string& str);
+WorkspaceMode workspaceModeFromString(const std::string& workspaceModeStr);

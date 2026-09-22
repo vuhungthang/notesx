@@ -75,3 +75,18 @@ auto emptyLastPageAppendFromString(const std::string& str) -> EmptyLastPageAppen
     g_warning("Settings::Unknown empty last page append type: %s\n", str.c_str());
     return EmptyLastPageAppendType::Disabled;
 }
+
+auto workspaceModeFromString(const std::string& workspaceModeStr) -> WorkspaceMode {
+    if (workspaceModeStr == "focus") {
+        return WorkspaceMode::FOCUS;
+    }
+    if (workspaceModeStr == "classic") {
+        return WorkspaceMode::CLASSIC;
+    }
+
+    // An unrecognised workspace mode was written by another version with workspaces
+    // we do not know about. Fall back to Classic: never silently move an established
+    // profile into the reduced Focus experience.
+    g_warning("Settings::Unknown workspace mode: %s\n", workspaceModeStr.c_str());
+    return WorkspaceMode::CLASSIC;
+}

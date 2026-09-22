@@ -118,6 +118,14 @@ private:
     void loadDefault();
     void parseItem(xmlDocPtr doc, xmlNodePtr cur);
 
+    /**
+     * Plan 002: resolve the workspace after parsing a settings file.
+     *
+     * @param profileExisted whether the settings file existed before load(), i.e. whether
+     *                       this is an established profile rather than a fresh one
+     */
+    void resolveWorkspaceAfterLoad(bool profileExisted);
+
     static xmlNodePtr savePropertyDouble(const gchar* key, double value, xmlNodePtr parent);
     static xmlNodePtr saveProperty(const gchar* key, int value, xmlNodePtr parent);
     static xmlNodePtr savePropertyUnsigned(const gchar* key, unsigned int value, xmlNodePtr parent);
@@ -161,10 +169,27 @@ public:
     void setFont(const XojFont& font);
 
     /**
-     * The selected Toolbar
+     * The selected Toolbar (i.e. the toolbar of the active workspace)
      */
     void setSelectedToolbar(const std::string& name);
     std::string const& getSelectedToolbar() const;
+
+    /**
+     * Plan 002: the workspace is the top level presentation mode. It bundles the
+     * toolbar selection and the menubar preference; those of the workspace that is
+     * left are remembered and restored when switching back.
+     *
+     * A workspace is presentation state only: it is never serialized into a document.
+     */
+    WorkspaceMode getWorkspaceMode() const;
+    void setWorkspaceMode(WorkspaceMode mode);
+
+    /** Toolbar selected in the given workspace, or its default when none was chosen. */
+    std::string const& getWorkspaceToolbar(WorkspaceMode mode) const;
+    /** Toolbar a workspace starts with, before the user selects another one. */
+    static std::string const& getDefaultWorkspaceToolbar(WorkspaceMode mode);
+    /** Menubar preference of the given workspace. */
+    bool isWorkspaceMenubarVisible(WorkspaceMode mode) const;
 
     void setEdgePanSpeed(double speed);
     double getEdgePanSpeed() const;
@@ -764,9 +789,36 @@ private:
     bool disableAudio{};
 
     /**
-     *  The selected Toolbar name
+     *  The selected Toolbar name (the toolbar of the active workspace)
      */
     std::string selectedToolbar;
+
+    /**
+     * Plan 002: the workspace in use. Presentation state, never serialized into a document.
+     */
+    WorkspaceMode workspaceMode;
+
+    /**
+     * Toolbar last selected in each workspace, so that switching workspaces does not
+     * overwrite the other workspace's choice.
+     */
+    std::string focusToolbar;
+    std::string classicToolbar;
+
+    /**
+     * Menubar preference of each workspace. Focus hides the menubar by default; it stays
+     * reachable with F10 and the "Show Menubar" menu item.
+     */
+    bool focusMenubarVisible{};
+    bool classicMenubarVisible{};
+
+    /**
+     * Transient load state (never serialized): which workspace keys the settings file
+     * carried, used to tell a fresh profile from one written before workspaces existed.
+     */
+    bool workspaceModeLoaded{};
+    bool selectedToolbarLoaded{};
+    bool menubarVisibleLoaded{};
 
     /**
      *  The last saved folder

@@ -38,6 +38,8 @@ using std::string;
 constexpr auto const* DEFAULT_FONT = "Sans";
 constexpr auto DEFAULT_FONT_SIZE = 12;
 constexpr auto DEFAULT_TOOLBAR = "Portrait";
+/// Plan 002: the compact toolbar a fresh profile starts with (see toolbar.ini.in)
+constexpr auto FOCUS_TOOLBAR = "Focus";
 
 #define SAVE_BOOL_PROP(var) xmlNode = saveProperty((const char*)#var, (var) ? "true" : "false", root)
 #define SAVE_STRING_PROP(var) xmlNode = saveProperty((const char*)#var, (var).empty() ? "" : (var).data(), root)
@@ -98,13 +100,23 @@ void Settings::loadDefault() {
     this->sidebarNumberingStyle = SidebarNumberingStyle::DEFAULT;
 
     this->showToolbar = true;
-    this->selectedToolbar = DEFAULT_TOOLBAR;
+    // Plan 002: a fresh profile starts in the Focus workspace. Existing profiles are
+    // migrated to Classic in resolveWorkspaceAfterLoad() so an update never silently
+    // changes an established user's layout.
+    this->workspaceMode = WorkspaceMode::FOCUS;
+    this->focusToolbar = FOCUS_TOOLBAR;
+    this->classicToolbar = DEFAULT_TOOLBAR;
+    this->selectedToolbar = this->focusToolbar;
 
     this->sidebarOnRight = false;
 
     this->scrollbarOnLeft = false;
 
-    this->menubarVisible = true;
+    // Plan 002: Focus starts without the traditional menubar; Classic keeps the
+    // pre-existing default of a visible menubar.
+    this->focusMenubarVisible = false;
+    this->classicMenubarVisible = true;
+    this->menubarVisible = this->focusMenubarVisible;
 
     this->autoloadMostRecent = false;
     this->autoloadPdfXoj = true;
@@ -419,6 +431,18 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->zoomGesturesEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("selectedToolbar")) == 0) {
         this->selectedToolbar = reinterpret_cast<const char*>(value);
+        this->selectedToolbarLoaded = true;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("workspaceMode")) == 0) {
+        this->workspaceMode = workspaceModeFromString(reinterpret_cast<const char*>(value));
+        this->workspaceModeLoaded = true;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("focusToolbar")) == 0) {
+        this->focusToolbar = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("classicToolbar")) == 0) {
+        this->classicToolbar = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("focusMenubarVisible")) == 0) {
+        this->focusMenubarVisible = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("classicMenubarVisible")) == 0) {
+        this->classicMenubarVisible = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("lastSavePath")) == 0) {
         this->lastSavePath = fs::path(xoj::util::utf8(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("lastOpenPath")) == 0) {
@@ -466,6 +490,7 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->scrollbarOnLeft = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("menubarVisible")) == 0) {
         this->menubarVisible = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+        this->menubarVisibleLoaded = true;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("numColumns")) == 0) {
         this->numColumns = g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("numRows")) == 0) {
@@ -838,7 +863,11 @@ void Settings::loadButtonConfig() {
 auto Settings::load() -> bool {
     xmlKeepBlanksDefault(0);
 
-    if (!fs::exists(filepath)) {
+    // Plan 002: whether the profile already existed decides how the workspace is resolved
+    // when the file carries no workspace field (see resolveWorkspaceAfterLoad()).
+    const bool profileExisted = fs::exists(filepath);
+
+    if (!profileExisted) {
         g_warning("Settings file %s does not exist. Regenerating. ", filepath.string().c_str());
         save();
     }
@@ -875,6 +904,8 @@ auto Settings::load() -> bool {
     }
 
     xmlFreeDoc(doc);
+
+    resolveWorkspaceAfterLoad(profileExisted);
 
     loadButtonConfig();
     loadDeviceClasses();
@@ -1021,6 +1052,14 @@ void Settings::save() {
     SAVE_BOOL_PROP(zoomGesturesEnabled);
 
     SAVE_STRING_PROP(selectedToolbar);
+
+    // Plan 002: workspace (presentation state, also used by the Workspace menu)
+    xmlNode = saveProperty("workspaceMode", workspaceModeToString(this->workspaceMode), root);
+    ATTACH_COMMENT("Active workspace, allowed values are \"focus\" and \"classic\"");
+    SAVE_STRING_PROP(focusToolbar);
+    SAVE_STRING_PROP(classicToolbar);
+    SAVE_BOOL_PROP(focusMenubarVisible);
+    SAVE_BOOL_PROP(classicMenubarVisible);
 
     saveProperty("lastSavePath", char_cast(this->lastSavePath.u8string().c_str()), root);
     saveProperty("lastOpenPath", char_cast(this->lastOpenPath.u8string().c_str()), root);
@@ -1365,6 +1404,8 @@ void Settings::setMenubarVisible(bool visible) {
     }
 
     this->menubarVisible = visible;
+    // Remember the preference for the workspace it was made in (Plan 002).
+    (this->workspaceMode == WorkspaceMode::FOCUS ? this->focusMenubarVisible : this->classicMenubarVisible) = visible;
 
     save();
 }
@@ -2099,10 +2140,67 @@ void Settings::setSelectedToolbar(const string& name) {
         return;
     }
     this->selectedToolbar = name;
+    // Remember the choice for the workspace it was made in, so that switching workspaces
+    // does not overwrite the other workspace's toolbar.
+    auto& workspaceToolbar = this->workspaceMode == WorkspaceMode::FOCUS ? this->focusToolbar : this->classicToolbar;
+    workspaceToolbar = name;
     save();
 }
 
 auto Settings::getSelectedToolbar() const -> string const& { return this->selectedToolbar; }
+
+auto Settings::getDefaultWorkspaceToolbar(WorkspaceMode mode) -> string const& {
+    static const string focusToolbar = FOCUS_TOOLBAR;
+    static const string classicToolbar = DEFAULT_TOOLBAR;
+    return mode == WorkspaceMode::FOCUS ? focusToolbar : classicToolbar;
+}
+
+auto Settings::getWorkspaceToolbar(WorkspaceMode mode) const -> string const& {
+    const string& toolbar = mode == WorkspaceMode::FOCUS ? this->focusToolbar : this->classicToolbar;
+    return toolbar.empty() ? getDefaultWorkspaceToolbar(mode) : toolbar;
+}
+
+auto Settings::isWorkspaceMenubarVisible(WorkspaceMode mode) const -> bool {
+    return mode == WorkspaceMode::FOCUS ? this->focusMenubarVisible : this->classicMenubarVisible;
+}
+
+auto Settings::getWorkspaceMode() const -> WorkspaceMode { return this->workspaceMode; }
+
+void Settings::setWorkspaceMode(WorkspaceMode mode) {
+    if (this->workspaceMode == mode) {
+        return;
+    }
+
+    // The live values are swapped for the new workspace's remembered ones. They are kept in
+    // sync with the active workspace by setSelectedToolbar()/setMenubarVisible().
+    this->workspaceMode = mode;
+    this->selectedToolbar = this->getWorkspaceToolbar(mode);
+    this->menubarVisible = this->isWorkspaceMenubarVisible(mode);
+    save();
+}
+
+void Settings::resolveWorkspaceAfterLoad(bool profileExisted) {
+    if (!this->workspaceModeLoaded) {
+        // No workspace field: either a profile written before workspaces existed, or a
+        // freshly regenerated one. An established profile keeps its layout (Classic) so the
+        // update does not silently change it; only a fresh profile starts in Focus.
+        this->workspaceMode = profileExisted ? WorkspaceMode::CLASSIC : WorkspaceMode::FOCUS;
+    }
+
+    // The flat keys describe the workspace that was in use when the file was written.
+    if (this->selectedToolbarLoaded) {
+        (this->workspaceMode == WorkspaceMode::FOCUS ? this->focusToolbar : this->classicToolbar) =
+                this->selectedToolbar;
+    }
+    if (this->menubarVisibleLoaded) {
+        (this->workspaceMode == WorkspaceMode::FOCUS ? this->focusMenubarVisible : this->classicMenubarVisible) =
+                this->menubarVisible;
+    }
+
+    // The live values always mirror the active workspace.
+    this->selectedToolbar = this->getWorkspaceToolbar(this->workspaceMode);
+    this->menubarVisible = this->isWorkspaceMenubarVisible(this->workspaceMode);
+}
 
 auto Settings::getCustomElement(const string& name) -> SElement& { return this->data[name]; }
 

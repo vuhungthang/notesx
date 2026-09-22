@@ -178,3 +178,184 @@ TEST(SettingsTest, testUnknownPersistedIconThemeFallsBackWithoutCrashing) {
 
     fs::remove_all(dir);
 }
+
+/*
+ * Plan 002: Focus and Classic workspaces.
+ *
+ * A fresh profile starts in Focus. A settings file that predates workspaces keeps the
+ * established layout (Classic), so updating never silently changes it. Each workspace
+ * remembers its own toolbar and menubar preference.
+ */
+
+namespace {
+
+/** A settings file as written before Plan 002: no workspace keys at all. */
+constexpr auto PRE_PLAN_002_SETTINGS = "<property name=\"iconTheme\" value=\"iconsColor\"/>\n"
+                                       "<property name=\"selectedToolbar\" value=\"Minimal Left\"/>\n"
+                                       "<property name=\"menubarVisible\" value=\"true\"/>\n";
+
+}  // namespace
+
+TEST(SettingsTest, testFreshProfileStartsInTheFocusWorkspace) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceFresh");
+
+    Settings settings{dir / "settings.xml"};
+    settings.load();
+
+    EXPECT_EQ(settings.getWorkspaceMode(), WorkspaceMode::FOCUS);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Focus");
+    EXPECT_FALSE(settings.isMenubarVisible());
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testFreshProfileWorkspaceIsPersisted) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceFreshPersisted");
+    const fs::path file = dir / "settings.xml";
+
+    Settings settings{file};
+    settings.load();
+
+    const std::string contents = readFile(file);
+    EXPECT_NE(contents.find("<property name=\"workspaceMode\" value=\"focus\"/>"), std::string::npos);
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getWorkspaceMode(), WorkspaceMode::FOCUS);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "Focus");
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testProfileWithoutWorkspaceFieldMigratesToClassic) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceMigration");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, PRE_PLAN_002_SETTINGS);
+
+    Settings settings{file};
+    settings.load();
+
+    // The established profile keeps its toolbar and its menubar.
+    EXPECT_EQ(settings.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Minimal Left");
+    EXPECT_TRUE(settings.isMenubarVisible());
+
+    // The migration is written out, so the next launch stays in Classic.
+    settings.transactionStart();
+    settings.transactionEnd();  // calls save()
+
+    const std::string contents = readFile(file);
+    EXPECT_NE(contents.find("<property name=\"workspaceMode\" value=\"classic\"/>"), std::string::npos);
+    EXPECT_NE(contents.find("<property name=\"classicToolbar\" value=\"Minimal Left\"/>"), std::string::npos);
+    EXPECT_NE(contents.find("<property name=\"focusToolbar\" value=\"Focus\"/>"), std::string::npos);
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "Minimal Left");
+    EXPECT_TRUE(reloaded.isMenubarVisible());
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testWorkspaceRoundTripsFocusAndClassic) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceRoundTrip");
+    const fs::path file = dir / "settings.xml";
+
+    {
+        Settings settings{file};
+        settings.load();
+        EXPECT_EQ(settings.getWorkspaceMode(), WorkspaceMode::FOCUS);
+
+        settings.setWorkspaceMode(WorkspaceMode::CLASSIC);
+        EXPECT_EQ(settings.getSelectedToolbar(), "Portrait");
+        settings.setSelectedToolbar("All in");
+    }
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "All in");
+
+    reloaded.setWorkspaceMode(WorkspaceMode::FOCUS);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "Focus");
+    reloaded.setWorkspaceMode(WorkspaceMode::CLASSIC);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "All in");
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testSwitchingWorkspacesKeepsEachToolbarSelection) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceToolbars");
+    const fs::path file = dir / "settings.xml";
+
+    Settings settings{file};
+    settings.load();
+
+    settings.setSelectedToolbar("Minimal Top");  // chosen while in Focus
+    settings.setWorkspaceMode(WorkspaceMode::CLASSIC);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Portrait");  // Classic's own default, untouched
+
+    settings.setSelectedToolbar("Tablet mode");
+    settings.setWorkspaceMode(WorkspaceMode::FOCUS);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Minimal Top");
+
+    settings.setWorkspaceMode(WorkspaceMode::CLASSIC);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Tablet mode");
+
+    // Both selections survive an application restart.
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "Tablet mode");
+
+    reloaded.setWorkspaceMode(WorkspaceMode::FOCUS);
+    EXPECT_EQ(reloaded.getSelectedToolbar(), "Minimal Top");
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testMenubarPreferenceIsKeptPerWorkspace) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceMenubar");
+    const fs::path file = dir / "settings.xml";
+
+    Settings settings{file};
+    settings.load();
+    EXPECT_FALSE(settings.isMenubarVisible());  // Focus hides the traditional menubar
+
+    settings.setWorkspaceMode(WorkspaceMode::CLASSIC);
+    EXPECT_TRUE(settings.isMenubarVisible());  // Classic keeps the pre-existing default
+
+    settings.setMenubarVisible(false);  // the user hides it in Classic
+    settings.setWorkspaceMode(WorkspaceMode::FOCUS);
+    EXPECT_FALSE(settings.isMenubarVisible());
+
+    settings.setMenubarVisible(true);  // the user shows it in Focus (F10)
+    settings.setWorkspaceMode(WorkspaceMode::CLASSIC);
+    EXPECT_FALSE(settings.isMenubarVisible());  // Classic's preference is not overwritten
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_FALSE(reloaded.isMenubarVisible());
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testUnknownWorkspaceModeFallsBackToClassic) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_workspaceUnknown");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, "<property name=\"selectedToolbar\" value=\"Portrait\"/>\n"
+                            "<property name=\"workspaceMode\" value=\"lecture\"/>\n");
+
+    Settings settings{file};
+    ASSERT_NO_THROW(settings.load());
+
+    // An unknown mode was not written by this version: never silently drop an
+    // established user into Focus.
+    EXPECT_EQ(settings.getWorkspaceMode(), WorkspaceMode::CLASSIC);
+    EXPECT_EQ(settings.getSelectedToolbar(), "Portrait");
+
+    fs::remove_all(dir);
+}
+
