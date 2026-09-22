@@ -35,7 +35,11 @@ public:
     void run() override;
 
 public:
-    void showDialogAndRun();
+    /**
+     * @param initialRange A page range the export dialog starts from, e.g. "1-3,5" for the pages
+     *                     the navigator has selected. Empty to start from the whole document.
+     */
+    void showDialogAndRun(const std::string& initialRange = std::string());
 
 protected:
     void afterRun() override;

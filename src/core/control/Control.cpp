@@ -88,10 +88,12 @@
 #include "plugin/PluginController.h"                             // for Plug...
 #include "settings/RecolorParameters.h"                          // for RecolorParameters
 #include "undo/AddUndoAction.h"                                  // for AddU...
+#include "undo/GroupUndoAction.h"                                // for GroupUndoAction
 #include "undo/InsertDeletePageUndoAction.h"                     // for Inse...
 #include "undo/InsertUndoAction.h"                               // for Inse...
 #include "undo/MoveSelectionToLayerUndoAction.h"                 // for Move...
 #include "undo/PageSizeChangeUndoAction.h"                       // for PageSizeChangeUndoAction
+#include "undo/ReorderPagesUndoAction.h"                         // for ReorderPagesUndoAction
 #include "undo/SwapUndoAction.h"                                 // for SwapUndoAction
 #include "undo/UndoAction.h"                                     // for Undo...
 #include "util/Assert.h"                                         // for xoj_assert
@@ -599,8 +601,28 @@ auto Control::firePageSelected(const PageRef& page) -> size_t {
 
 void Control::firePageSelected(size_t page) {
     if (page != this->getCurrentPageNo()) {
+        // Plan 005: a page change the navigator did not decide itself - a scroll, a jump, a load -
+        // replaces the selection with the page it lands on. A change the navigator decided has
+        // already set the model up, and must not collapse the selection the user just made.
+        if (this->pageSelection.getCurrentPage() != page) {
+            this->pageSelection.setCurrentPage(page);
+        }
         DocumentHandler::firePageSelected(page);
     }
+}
+
+void Control::firePageInserted(size_t page) {
+    if (!this->applyingPageReorder) {
+        this->pageSelection.pagesInserted(page, 1);
+    }
+    DocumentHandler::firePageInserted(page);
+}
+
+void Control::firePageDeleted(size_t page) {
+    if (!this->applyingPageReorder) {
+        this->pageSelection.pageDeleted(page);
+    }
+    DocumentHandler::firePageDeleted(page);
 }
 
 void Control::manageToolbars() {
@@ -728,13 +750,29 @@ void Control::addDefaultPage(const std::optional<PageTemplateSettings>& pageTemp
 void Control::updatePageActions() {
     auto currentPage = getCurrentPageNo();
     auto nbPages = this->doc->getPageCount();
-    this->actionDB->enableAction(Action::DELETE_PAGE, nbPages > 1);
-    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_BEGINNING, currentPage != 0);
-    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_END, currentPage < nbPages - 1);
+    const auto& selection = this->pageSelection.getSelection();
+
+    // The actions act on the selection when the navigator has one, and on the current page
+    // otherwise.
+    const size_t selected = std::max<size_t>(selection.size(), 1);
+    const size_t firstSelected = selection.empty() ? currentPage : selection.front();
+    const size_t lastSelected = selection.empty() ? currentPage : selection.back();
+
+    this->actionDB->enableAction(Action::DELETE_PAGE, nbPages > selected);
+    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_BEGINNING, firstSelected != npos && firstSelected != 0);
+    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_END,
+                                 lastSelected != npos && lastSelected + 1 < nbPages);
 }
 
 void Control::deletePage() {
     clearSelectionEndText();
+
+    // Plan 005: the navigator's selection is what the action acts on. One page selected is the
+    // plain single page behavior, unchanged.
+    if (this->pageSelection.count() > 1) {
+        deleteSelectedPages();
+        return;
+    }
 
     // if the current page contains the geometry tool, reset it
     size_t pNr = getCurrentPageNo();
@@ -779,6 +817,11 @@ void Control::deletePage() {
 }
 
 void Control::duplicatePage() {
+    if (this->pageSelection.count() > 1) {
+        duplicateSelectedPages();
+        return;
+    }
+
     auto page = getCurrentPage();
     if (!page) {
         return;
@@ -789,6 +832,11 @@ void Control::duplicatePage() {
 }
 
 void Control::movePageTowardsBeginning() {
+    if (this->pageSelection.count() > 1) {
+        moveSelectedPagesTowardsBeginning();
+        return;
+    }
+
     auto currentPageNo = this->getCurrentPageNo();
     if (currentPageNo < 1) {
         g_warning("Control::movePageTowardsBeginning() called on the first page");
@@ -824,6 +872,11 @@ void Control::movePageTowardsBeginning() {
 
 
 void Control::movePageTowardsEnd() {
+    if (this->pageSelection.count() > 1) {
+        moveSelectedPagesTowardsEnd();
+        return;
+    }
+
     auto currentPageNo = this->getCurrentPageNo();
     if (currentPageNo == npos) {
         g_warning("Control::movePageTowardsEnd() called with current page selected");
@@ -855,6 +908,267 @@ void Control::movePageTowardsEnd() {
     this->firePageSelected(currentPageNo + 1);
 
     this->getScrollHandler()->scrollToPage(currentPageNo + 1);
+}
+
+/**
+ * Plan 005, step 4: the multi page operations.
+ *
+ * Each of them is one undoable operation, and each of them leaves the plain single page case
+ * alone: `deletePage()` and its neighbours only come here when the navigator has more than one
+ * page selected.
+ */
+
+void Control::pageSelectionClicked(size_t page, bool controlPressed, bool shiftPressed) {
+    if (page == npos || page >= this->doc->getPageCount()) {
+        return;
+    }
+
+    if (shiftPressed) {
+        this->pageSelection.extendTo(page);
+    } else if (controlPressed) {
+        this->pageSelection.toggle(page);
+    } else {
+        this->pageSelection.replaceWith(page);
+    }
+
+    // The navigator decided this selection. The page change that follows must not replace it with
+    // the page it navigates to, so the model is told the current page without touching the
+    // selection.
+    this->pageSelection.setCurrentPageWithoutSelecting(page);
+
+    updatePageActions();
+}
+
+void Control::deleteSelectedPages() {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.empty()) {
+        return;
+    }
+    // don't allow deleting every page: there has to be at least one left.
+    if (this->doc->getPageCount() <= selection.size()) {
+        return;
+    }
+
+    // if the current page contains the geometry tool, reset it
+    if (geometryToolController) {
+        this->doc->lock_shared();
+        const auto page = this->doc->indexOf(geometryToolController->getPage());
+        this->doc->unlock_shared();
+        if (page != npos && std::find(selection.begin(), selection.end(), page) != selection.end()) {
+            resetGeometryTool();
+        }
+    }
+
+    auto group = std::make_unique<GroupUndoAction>();
+
+    // Descending: deleting a page does not move the indices of the pages before it, so the pages
+    // still to be deleted keep the indices the user saw.
+    std::vector<std::unique_ptr<UndoAction>> deletions;
+    for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
+        const size_t pNr = *it;
+        if (pNr >= this->doc->getPageCount()) {
+            continue;
+        }
+        this->doc->lock_shared();
+        PageRef page = this->doc->getPage(pNr);
+        this->doc->unlock_shared();
+        if (!page) {
+            continue;
+        }
+
+        // first send event, then delete page...
+        firePageDeleted(pNr);
+
+        this->doc->lock();
+        this->doc->deletePage(pNr);
+        this->doc->unlock();
+
+        deletions.push_back(std::make_unique<InsertDeletePageUndoAction>(page, pNr, false));
+    }
+
+    // A group undoes its members in the order they were added, and the pages have to go back
+    // ascending: an insertion at the index a page was deleted from only lands where it was once
+    // every page before it is back in place.
+    for (auto it = deletions.rbegin(); it != deletions.rend(); ++it) {
+        group->addAction(std::move(*it));
+    }
+
+    this->undoRedo->addUndoAction(std::move(group));
+
+    const size_t landing = std::min(selection.front(), this->doc->getPageCount() - 1);
+    this->pageSelection.replaceWith(landing);
+    this->scrollHandler->scrollToPage(landing);
+    this->win->getXournal()->forceUpdatePagenumbers();
+    updatePageActions();
+}
+
+void Control::duplicateSelectedPages() {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.empty()) {
+        return;
+    }
+
+    auto group = std::make_unique<GroupUndoAction>();
+    const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(selection);
+
+    // Descending, so that inserting a copy does not move the index of a page still to duplicate.
+    for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
+        const size_t pNr = *it;
+        this->doc->lock_shared();
+        PageRef page = this->doc->getPage(pNr);
+        this->doc->unlock_shared();
+        if (!page) {
+            continue;
+        }
+
+        auto pageCopy = std::make_shared<XojPage>(*page);
+
+        this->doc->lock();
+        this->doc->insertPage(pageCopy, pNr + 1);
+        this->doc->unlock();
+
+        group->addAction(std::make_unique<InsertDeletePageUndoAction>(pageCopy, pNr + 1, true));
+        firePageInserted(pNr + 1);
+    }
+
+    this->undoRedo->addUndoAction(std::move(group));
+
+    // The copies are what the user just made, so they are what stays selected.
+    this->pageSelection.setSelection(copies);
+
+    getCursor()->updateCursor();
+    updatePageActions();
+}
+
+void Control::moveSelectedPagesTowardsBeginning() {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.empty() || selection.front() == 0) {
+        return;
+    }
+    moveSelectedPages(selection.front() - 1);
+}
+
+void Control::moveSelectedPagesTowardsEnd() {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.empty()) {
+        return;
+    }
+    if (selection.back() + 1 >= this->doc->getPageCount()) {
+        return;
+    }
+    moveSelectedPages(selection.back() + 2);
+}
+
+void Control::moveSelectedPages(size_t destination) {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.empty()) {
+        return;
+    }
+
+    Document* doc = this->doc;
+    doc->lock_shared();
+    const size_t pageCount = doc->getPageCount();
+    std::vector<PageRef> before;
+    before.reserve(pageCount);
+    for (size_t i = 0; i < pageCount; ++i) {
+        before.push_back(doc->getPage(i));
+    }
+    doc->unlock_shared();
+
+    const auto order = xoj::model::computeMoveOrder(pageCount, selection, destination);
+
+    bool changesSomething = false;
+    for (size_t i = 0; i < order.size(); ++i) {
+        if (order[i] != i) {
+            changesSomething = true;
+            break;
+        }
+    }
+    if (!changesSomething) {
+        return;
+    }
+
+    std::vector<PageRef> after;
+    after.reserve(pageCount);
+    for (size_t oldIndex: order) {
+        after.push_back(before[oldIndex]);
+    }
+
+    auto action = std::make_unique<ReorderPagesUndoAction>(std::move(before), std::move(after));
+    action->redo(this);
+    this->undoRedo->addUndoAction(std::move(action));
+}
+
+void Control::applyPageOrder(const std::vector<PageRef>& target) {
+    Document* doc = this->doc;
+
+    // The permutation this move realizes, for the selection model: the pages the navigator had
+    // selected keep their identity and follow the move to their new indices.
+    std::vector<PageRef> current;
+    doc->lock_shared();
+    current.reserve(doc->getPageCount());
+    for (size_t i = 0; i < doc->getPageCount(); ++i) {
+        current.push_back(doc->getPage(i));
+    }
+    doc->unlock_shared();
+
+    std::vector<size_t> newToOld(target.size());
+    for (size_t i = 0; i < target.size(); ++i) {
+        newToOld[i] = i;
+        for (size_t j = 0; j < current.size(); ++j) {
+            if (current[j] == target[i]) {
+                newToOld[i] = j;
+                break;
+            }
+        }
+    }
+
+    const bool wasApplying = this->applyingPageReorder;
+    this->applyingPageReorder = true;
+
+    for (size_t i = 0; i < target.size(); ++i) {
+        doc->lock_shared();
+        const size_t from = doc->indexOf(target[i]);
+        doc->unlock_shared();
+        if (from == npos || from == i) {
+            continue;
+        }
+
+        doc->lock();
+        doc->deletePage(from);
+        doc->insertPage(target[i], i);
+        doc->unlock();
+
+        // The same pair of events the single page move sends, so every listener that keeps a page
+        // list of its own - the views, the navigator - follows the move.
+        firePageDeleted(from);
+        firePageInserted(i);
+    }
+
+    this->applyingPageReorder = wasApplying;
+
+    this->pageSelection.applyPermutation(newToOld);
+
+    const size_t currentPage = this->pageSelection.getCurrentPage();
+    if (currentPage != npos) {
+        this->scrollHandler->scrollToPage(currentPage);
+    }
+    this->win->getXournal()->forceUpdatePagenumbers();
+
+    // The page order is the one thing a page list cannot work out from a delete/insert pair.
+    firePagesReordered();
+    updatePageActions();
+}
+
+auto Control::buildSelectedPageRange() const -> std::string {
+    const auto& selection = this->pageSelection.getSelection();
+    if (selection.size() < 2) {
+        // With one page selected there is nothing a range would say that the export dialog's
+        // "current page" does not.
+        return {};
+    }
+
+    return xoj::model::formatPageRange(selection);
 }
 
 /// Remove mnemonic indicators in menu labels
@@ -2167,7 +2481,9 @@ void Control::exportAsPdf() {
 void Control::exportAs() {
     this->clearSelectionEndText();
     auto* job = new CustomExportJob(this);
-    job->showDialogAndRun();
+    // Plan 005: exporting a multi page selection starts from that selection. The dialog still lets
+    // the user change or drop the range before anything is written.
+    job->showDialogAndRun(buildSelectedPageRange());
 }
 
 void Control::save(std::function<void(bool)> callback) { saveImpl(false, std::move(callback)); }

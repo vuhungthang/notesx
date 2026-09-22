@@ -28,8 +28,13 @@ class GladeSearchpath;
 namespace xoj::popup {
 class ExportDialog {
 public:
+    /**
+     * @param initialRange A page range to start from, e.g. "1-3,5". Empty starts from the whole
+     *                     document. The range is only pre-filled: the user still confirms it.
+     */
     ExportDialog(GladeSearchpath* gladeSearchPath, ExportGraphicsFormat format, size_t currentPage, size_t pageCount,
-                 bool hasPdfBackground, std::function<void(const ExportDialog&)> callbackFun);
+                 bool hasPdfBackground, const std::string& initialRange,
+                 std::function<void(const ExportDialog&)> callbackFun);
     ~ExportDialog();
 
 public:

@@ -32,6 +32,7 @@
 #include "model/DocumentListener.h"                 // for DocumentListener
 #include "model/GeometryTool.h"                     // for GeometryTool
 #include "model/PageRef.h"                          // for PageRef
+#include "model/PageSelectionModel.h"               // for PageSelectionModel
 #include "undo/UndoRedoHandler.h"                   // for UndoRedoHandler (ptr only)
 
 #include "ClipboardHandler.h"           // for ClipboardListener
@@ -245,6 +246,13 @@ public:
     size_t firePageSelected(const PageRef& page);
     void firePageSelected(size_t page);
 
+    /**
+     * The page list of the document changed. These funnel every structural page change, so the
+     * page selection follows them from one place.
+     */
+    void firePageInserted(size_t page);
+    void firePageDeleted(size_t page);
+
     void addDefaultPage(const std::optional<PageTemplateSettings>& pageTemplate, Document* doc = nullptr);
     void duplicatePage();
     void insertNewPage(size_t position, bool automatedInsertion = false);
@@ -253,6 +261,63 @@ public:
     void deletePage();
     void movePageTowardsBeginning();
     void movePageTowardsEnd();
+
+    /**
+     * Plan 005: which pages the page navigator has selected.
+     *
+     * The navigator writes it, and the page actions below read it, so that duplicate, delete,
+     * move and export act on exactly what the navigator shows as selected.
+     */
+    auto getPageSelection() -> xoj::model::PageSelectionModel& { return this->pageSelection; }
+    auto getPageSelection() const -> const xoj::model::PageSelectionModel& { return this->pageSelection; }
+
+    /**
+     * The page navigator was clicked.
+     *
+     * @param controlPressed Ctrl: add or remove this one page
+     * @param shiftPressed Shift: select the range from the anchor to this page
+     */
+    void pageSelectionClicked(size_t page, bool controlPressed, bool shiftPressed);
+
+    /**
+     * Move the selected pages so that the first of them lands before `destination`.
+     *
+     * This is one undoable operation: one Undo puts the pages back the way they were, keeping
+     * their relative order.
+     */
+    void moveSelectedPages(size_t destination);
+
+    /**
+     * Put the document's pages into the order `target` gives.
+     *
+     * The move is emitted as the same delete/insert pair the single page move sends, so every
+     * listener that keeps its own page list - the views, the navigator - stays in step. The
+     * selection follows the pages it had selected to their new indices.
+     */
+    void applyPageOrder(const std::vector<PageRef>& target);
+
+    /**
+     * Delete the pages the navigator has selected, as one undoable operation.
+     *
+     * Does nothing when that would leave the document without a page.
+     */
+    void deleteSelectedPages();
+
+    /**
+     * Duplicate the pages the navigator has selected, each copy right below its original.
+     */
+    void duplicateSelectedPages();
+
+    /// Move the selected pages one step towards the beginning / the end of the document.
+    void moveSelectedPagesTowardsBeginning();
+    void moveSelectedPagesTowardsEnd();
+
+    /**
+     * The export destination of the selected pages, as a page range like "1-3,5".
+     *
+     * Empty when the navigator has no selection, so that `exportAs()` exports everything.
+     */
+    auto buildSelectedPageRange() const -> std::string;
 
     /**
      * Ask the user whether a page with the given id
@@ -537,6 +602,18 @@ private:
     MainWindow* win = nullptr;
 
     Document* doc = nullptr;
+
+    /// Plan 005: the pages the navigator has selected, and the page the editor shows.
+    xoj::model::PageSelectionModel pageSelection;
+
+    /**
+     * True while `applyPageOrder()` is moving pages one at a time.
+     *
+     * The delete/insert pair it emits per moved page is not an edit of the document's contents,
+     * so the selection model must not read it as one: the pages stay selected and only their
+     * indices change, which `applyPageOrder()` applies as one permutation at the end.
+     */
+    bool applyingPageReorder = false;
 
     Sidebar* sidebar = nullptr;
     SearchBar* searchBar = nullptr;

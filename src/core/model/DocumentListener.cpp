@@ -1,5 +1,7 @@
 #include "DocumentListener.h"
 
+void DocumentListener::pagesReordered() {}
+
 #include "model/DocumentChangeType.h"  // for DocumentChangeType
 
 #include "DocumentHandler.h"  // for DocumentHandler

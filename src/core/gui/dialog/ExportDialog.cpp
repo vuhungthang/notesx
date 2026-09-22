@@ -19,7 +19,7 @@ constexpr auto UI_DIALOG_NAME = "exportDialog";
 using namespace xoj::popup;
 
 ExportDialog::ExportDialog(GladeSearchpath* gladeSearchPath, ExportGraphicsFormat format, size_t currentPage,
-                           size_t pageCount, bool hasPdfBackground,
+                           size_t pageCount, bool hasPdfBackground, const std::string& initialRange,
                            std::function<void(const ExportDialog&)> callbackFun):
         currentPage(currentPage), pageCount(pageCount), builder(gladeSearchPath, UI_FILE), callbackFun(callbackFun) {
     window.reset(GTK_WINDOW(builder.get(UI_DIALOG_NAME)));
@@ -105,6 +105,13 @@ ExportDialog::ExportDialog(GladeSearchpath* gladeSearchPath, ExportGraphicsForma
     g_signal_connect(builder.get("cbQuality"), "changed", G_CALLBACK(ExportDialog::selectQualityCriterion), this);
     g_signal_connect(builder.get("txtPages"), "changed", changedHandler, this);
 
+    if (!initialRange.empty()) {
+        // Plan 005: a multi page selection in the page navigator arrives here as the range the
+        // export starts from. It is only pre-filled - the user confirms or changes it, and the
+        // handlers above have already validated it.
+        gtk_editable_set_text(GTK_EDITABLE(builder.get("txtPages")), initialRange.c_str());
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(builder.get("rdRangePages")), true);
+    }
 
     g_signal_connect_swapped(builder.get("btCancel"), "clicked", G_CALLBACK(gtk_window_close), this->window.get());
     g_signal_connect_swapped(builder.get("btOk"), "clicked", G_CALLBACK(ExportDialog::onSuccessCallback), this);

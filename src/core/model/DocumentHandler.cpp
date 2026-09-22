@@ -28,6 +28,10 @@ void DocumentHandler::firePageDeleted(size_t page) {
     for (DocumentListener* dl: this->listener) { dl->pageDeleted(page); }
 }
 
+void DocumentHandler::firePagesReordered() {
+    for (DocumentListener* dl: this->listener) { dl->pagesReordered(); }
+}
+
 void DocumentHandler::firePageSelected(size_t page) {
     for (DocumentListener* dl: this->listener) { dl->pageSelected(page); }
 }

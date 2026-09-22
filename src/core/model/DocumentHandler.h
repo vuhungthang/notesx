@@ -30,6 +30,7 @@ public:
     void firePageChanged(size_t page);
     void firePageInserted(size_t page);
     void firePageDeleted(size_t page);
+    void firePagesReordered();
     // void firePageLoaded(PageRef page);
     void firePageSelected(size_t page);
 

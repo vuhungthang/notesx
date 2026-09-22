@@ -10,11 +10,13 @@
  */
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "model/PageSelectionModel.h"
+#include "util/ElementRange.h"  // for ElementRange, PageRangeVector
 
 /*
  * Plan 005, step 1: the page selection model, on its own.
@@ -362,4 +364,89 @@ TEST(PageSelectionModel, MoveOrderRoundTripsThroughTheSelectionModel) {
     model.applyPermutation(inverse);
 
     EXPECT_EQ(selection(model), (std::vector<size_t>{1, 4}));
+}
+
+/*
+ * Plan 005, step 4: a selection is what the page operations act on, and the export range is what
+ * "export the selected pages" means. The range has to name exactly the selected pages, in the
+ * syntax the export dialog parses, or a noncontiguous selection would export the wrong ones.
+ */
+TEST(PageSelectionModel, PageRangeNamesOnePage) {
+    EXPECT_EQ(xoj::model::formatPageRange({0}), "1");
+    EXPECT_EQ(xoj::model::formatPageRange({6}), "7");
+}
+
+TEST(PageSelectionModel, PageRangeNamesAContiguousBlock) {
+    EXPECT_EQ(xoj::model::formatPageRange({2, 3, 4}), "3-5");
+}
+
+TEST(PageSelectionModel, PageRangeNamesANoncontiguousSelection) {
+    EXPECT_EQ(xoj::model::formatPageRange({0, 2, 3, 6}), "1,3-4,7");
+    EXPECT_EQ(xoj::model::formatPageRange({0, 1, 3, 5, 6}), "1-2,4,6-7");
+}
+
+TEST(PageSelectionModel, PageRangeIsEmptyWithoutASelection) {
+    EXPECT_EQ(xoj::model::formatPageRange({}), "");
+}
+
+TEST(PageSelectionModel, PageRangeNormalizesItsInput) {
+    EXPECT_EQ(xoj::model::formatPageRange({3, 1, 3, 2}), "2-4");
+}
+
+/// A range the export dialog would refuse is worse than no range at all, so the two agree.
+TEST(PageSelectionModel, PageRangeRoundTripsThroughTheExportParser) {
+    const std::vector<size_t> selection{0, 2, 3, 6};
+    const std::string range = xoj::model::formatPageRange(selection);
+
+    const PageRangeVector ranges = ElementRange::parse(range, 8);
+
+    std::vector<size_t> parsed;
+    for (const auto& [from, to]: ranges) {
+        for (size_t page = from; page <= to; page++) { parsed.push_back(page); }
+    }
+
+    EXPECT_EQ(parsed, selection) << "the export range names exactly the selected pages";
+}
+
+TEST(PageSelectionModel, SetSelectionNormalizesItsInput) {
+    PageSelectionModel model = freshModel(8);
+
+    model.setSelection({5, 1, 5, 2});
+
+    EXPECT_EQ(selection(model), (std::vector<size_t>{1, 2, 5}));
+    EXPECT_EQ(model.getAnchor(), 5u);
+    EXPECT_EQ(model.getCurrentPage(), 0u) << "selecting pages is not a navigation";
+}
+
+TEST(PageSelectionModel, SetSelectionToNothingLeavesNoAnchor) {
+    PageSelectionModel model = freshModel(4);
+
+    model.setSelection({});
+
+    EXPECT_TRUE(model.empty());
+    EXPECT_EQ(model.getAnchor(), PageSelectionModel::npos);
+}
+
+/*
+ * Duplicating a noncontiguous selection has to affect exactly the selected pages, and it does that
+ * by inserting the copies from the last page backwards.
+ */
+TEST(PageSelectionModel, DuplicatedPagesLandBelowTheirOriginal) {
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({1, 3}), (std::vector<size_t>{2, 4}));
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({0}), (std::vector<size_t>{1}));
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({}), (std::vector<size_t>{}));
+}
+
+TEST(PageSelectionModel, DuplicatingEveryPageDoublesTheDocument) {
+    PageSelectionModel model = freshModel(4);
+    model.selectAll(4);
+
+    const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(model.getSelection());
+
+    EXPECT_EQ(copies, (std::vector<size_t>{1, 2, 3, 4}));
+
+    // Each copy sits directly below the page it copies, and every original is still where it was.
+    for (size_t original = 0; original < copies.size(); original++) {
+        EXPECT_EQ(copies[original], original + 1);
+    }
 }

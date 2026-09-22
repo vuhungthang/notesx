@@ -34,6 +34,14 @@ void PageSelectionModel::replaceWith(size_t page) {
     this->current = page;
 }
 
+void PageSelectionModel::setSelection(std::vector<size_t> pages) {
+    std::sort(pages.begin(), pages.end());
+    pages.erase(std::unique(pages.begin(), pages.end()), pages.end());
+
+    this->selection = std::move(pages);
+    this->anchor = this->selection.empty() ? npos : this->selection.back();
+}
+
 void PageSelectionModel::toggle(size_t page) {
     if (page == npos) {
         return;
@@ -184,7 +192,9 @@ void PageSelectionModel::clampTo(size_t pageCount) {
     if (this->current >= pageCount) {
         this->current = npos;
     }
-    if (this->anchor >= pageCount || (this->anchor != npos && !isSelected(this->anchor))) {
+    // The anchor only has to point at a page that exists; it is not necessarily selected, which is
+    // what lets a Shift-click extend from a page a Ctrl-click has just removed.
+    if (this->anchor >= pageCount) {
         this->anchor = this->selection.empty() ? npos : this->selection.back();
     }
 }
@@ -231,6 +241,56 @@ auto computeMoveOrder(size_t pageCount, const std::vector<size_t>& moved, size_t
     result.insert(result.end(), block.begin(), block.end());
     result.insert(result.end(), others.begin() + static_cast<std::ptrdiff_t>(insertPos), others.end());
     return result;
+}
+
+auto formatPageRange(const std::vector<size_t>& pages) -> std::string {
+    if (pages.empty()) {
+        return {};
+    }
+
+    std::vector<size_t> sorted = pages;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+
+    std::string range;
+    size_t first = sorted.front();
+    size_t last = sorted.front();
+
+    for (size_t i = 1; i <= sorted.size(); ++i) {
+        // npos closes the run that is open, without being a page of its own.
+        const size_t page = i < sorted.size() ? sorted[i] : PageSelectionModel::npos;
+        if (page == last + 1) {
+            last = page;
+            continue;
+        }
+
+        if (!range.empty()) {
+            range += ",";
+        }
+        // The pages are 1-based in the range syntax.
+        if (first == last) {
+            range += std::to_string(first + 1);
+        } else {
+            range += std::to_string(first + 1) + "-" + std::to_string(last + 1);
+        }
+
+        if (page != PageSelectionModel::npos) {
+            first = last = page;
+        }
+    }
+
+    return range;
+}
+
+auto duplicatedPageIndices(const std::vector<size_t>& pages) -> std::vector<size_t> {
+    // Duplicating from the last page backwards: an insertion below a page never moves a page that
+    // comes before it, so every copy lands directly below the page it copies.
+    std::vector<size_t> copies;
+    copies.reserve(pages.size());
+    for (size_t page: pages) {
+        copies.push_back(page + 1);
+    }
+    return copies;
 }
 
 }  // namespace xoj::model

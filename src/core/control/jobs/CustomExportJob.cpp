@@ -50,10 +50,10 @@ void CustomExportJob::setExtensionFromFilter(fs::path& file, const char* filterN
     file += chosenFilter.extension;
 }
 
-void CustomExportJob::showDialogAndRun() {
+void CustomExportJob::showDialogAndRun(const std::string& initialRange) {
 
-    auto onFileSelected = [job = this]() {
-        Util::execInUiThread([job]() {
+    auto onFileSelected = [job = this, initialRange]() {
+        Util::execInUiThread([job, initialRange]() {
             if (job->filepath.extension() == ".xoj") {
                 job->exportTypeXoj = true;
                 // Plan 004: the export is announced once its destination is known, never before.
@@ -76,6 +76,7 @@ void CustomExportJob::showDialogAndRun() {
             xoj::popup::PopupWindowWrapper<xoj::popup::ExportDialog> popup(
                     ctrl->getGladeSearchPath(), job->format, ctrl->getCurrentPageNo() + 1,
                     ctrl->getDocument()->getPageCount(), !ctrl->getDocument()->getPdfFilepath().empty(),
+                    initialRange,
                     [job](const xoj::popup::ExportDialog& dialog) {
                         if (dialog.isConfirmed()) {
                             job->exportRange = dialog.getRange();

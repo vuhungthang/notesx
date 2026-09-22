@@ -12,6 +12,7 @@
 #pragma once
 
 #include <cstddef>  // for size_t
+#include <string>   // for string
 #include <vector>   // for vector
 
 namespace xoj::model {
@@ -66,6 +67,15 @@ public:
 public:
     /// Select exactly `page`, replacing whatever was selected.
     void replaceWith(size_t page);
+
+    /**
+     * Select exactly `pages`, replacing whatever was selected.
+     *
+     * Used after an operation that creates pages and wants the new ones selected, such as
+     * duplicating a selection: the caller knows the indices it just created, and this keeps the
+     * model's invariants (ascending, no duplicates) rather than trusting them.
+     */
+    void setSelection(std::vector<size_t> pages);
 
     /// Ctrl-click: add `page` to the selection, or remove it if it was selected.
     void toggle(size_t page);
@@ -140,5 +150,27 @@ private:
  *         the identity order when the move changes nothing.
  */
 auto computeMoveOrder(size_t pageCount, const std::vector<size_t>& moved, size_t destination) -> std::vector<size_t>;
+
+/**
+ * The page range string that names exactly `pages`.
+ *
+ * The syntax is the one the export dialog and `ElementRange::parse()` use, and the pages are
+ * 1-based in it, so a selection of the pages at positions 0, 2, 3 and 6 reads "1,3-4,7".
+ *
+ * @param pages Positions, ascending and without duplicates. Anything else is normalized first.
+ * @return The range, or an empty string when nothing is selected.
+ */
+auto formatPageRange(const std::vector<size_t>& pages) -> std::string;
+
+/**
+ * Where the copies land when every page of `pages` is duplicated directly below itself.
+ *
+ * The copies are inserted from the last page backwards, so the indices of the pages that are
+ * still to be duplicated do not move while the copies are being made.
+ *
+ * @param pages Positions, ascending and without duplicates
+ * @return The positions of the copies, ascending
+ */
+auto duplicatedPageIndices(const std::vector<size_t>& pages) -> std::vector<size_t>;
 
 }  // namespace xoj::model
