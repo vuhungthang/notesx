@@ -24,6 +24,7 @@
 #include <glib.h>         // for gchar, gboolean, gint
 #include <libxml/tree.h>  // for xmlNodePtr, xmlDocPtr
 
+#include "control/ToolPreset.h"                  // for ToolPreset, ToolPresetList
 #include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
 #include "model/Font.h"                          // for XojFont
 #include "util/Color.h"                          // for Color
@@ -126,6 +127,15 @@ private:
      */
     void resolveWorkspaceAfterLoad(bool profileExisted);
 
+    /**
+     * Plan 003: read/write the <toolPresets> element.
+     *
+     * Presets do not use the generic <data> mechanism because that one is keyed by name and
+     * would sort the presets, losing the order the user arranged them in.
+     */
+    void parseToolPresets(xmlNodePtr cur);
+    void saveToolPresets(xmlNodePtr root);
+
     static xmlNodePtr savePropertyDouble(const gchar* key, double value, xmlNodePtr parent);
     static xmlNodePtr saveProperty(const gchar* key, int value, xmlNodePtr parent);
     static xmlNodePtr savePropertyUnsigned(const gchar* key, unsigned int value, xmlNodePtr parent);
@@ -190,6 +200,22 @@ public:
     static std::string const& getDefaultWorkspaceToolbar(WorkspaceMode mode);
     /** Menubar preference of the given workspace. */
     bool isWorkspaceMenubarVisible(WorkspaceMode mode) const;
+
+    /**
+     * Plan 003: the named tool presets.
+     *
+     * A fresh profile starts with the built-in examples; an upgrade keeps whatever the profile
+     * already carried, and never replaces it with the examples.
+     */
+    const ToolPresetList& getToolPresets() const;
+    void setToolPresets(ToolPresetList presets);
+
+    /**
+     * Plan 003: how many favourites the Focus workspace shows directly, between 0 and
+     * ToolPresetList::MAX_FAVORITES. The complete list stays in the property popover.
+     */
+    int getFavoritePresetCount() const;
+    void setFavoritePresetCount(int count);
 
     void setEdgePanSpeed(double speed);
     double getEdgePanSpeed() const;
@@ -819,6 +845,17 @@ private:
     bool workspaceModeLoaded{};
     bool selectedToolbarLoaded{};
     bool menubarVisibleLoaded{};
+
+    /**
+     * Plan 003: named tool presets, in the order the user arranged them.
+     *
+     * Seeded by the member initializer rather than after load(), so a regenerated settings file
+     * already carries the examples, while a profile that does carry a <toolPresets> element
+     * replaces them with its own.
+     */
+    ToolPresetList toolPresets = ToolPresetList::seedDefaults();
+    /// How many favourites Focus shows directly.
+    int favoritePresetCount = static_cast<int>(ToolPresetList::MAX_FAVORITES);
 
     /**
      *  The last saved folder

@@ -21,9 +21,9 @@
 #include "gui/toolbarMenubar/model/ColorPalette.h"  // for Palette
 #include "model/FormatDefinitions.h"                // for FormatUnits, XOJ_...
 #include "util/Color.h"
-#include "util/PathUtil.h"  // for getConfigFile
-#include "util/Util.h"      // for PRECISION_FORMAT_...
-#include "util/i18n.h"      // for _
+#include "util/PathUtil.h"    // for getConfigFile
+#include "util/Util.h"        // for PRECISION_FORMAT_...
+#include "util/i18n.h"        // for _
 #include "util/safe_casts.h"  // for as_unsigned
 #include "util/utf8_view.h"   // for utf8_view
 
@@ -357,6 +357,63 @@ void Settings::parseData(xmlNodePtr cur, SElement& elem) {
     }
 }
 
+void Settings::parseToolPresets(xmlNodePtr cur) {
+    xmlChar* version = xmlGetProp(cur, reinterpret_cast<const xmlChar*>("version"));
+    const int storedVersion = version == nullptr ? 0 : atoi(reinterpret_cast<const char*>(version));
+    xmlFree(version);
+
+    if (storedVersion > ToolPresetList::STORAGE_VERSION) {
+        // Written by a newer version of the application: keep the examples rather than reading a
+        // format this version does not understand and writing it back in a lossy shape.
+        g_warning("Settings: tool presets use format version %i, this version understands %i. "
+                  "Keeping the built-in examples.",
+                  storedVersion, ToolPresetList::STORAGE_VERSION);
+        return;
+    }
+
+    std::vector<ToolPreset> stored;
+    for (xmlNodePtr x = cur->children; x != nullptr; x = x->next) {
+        if (x->type != XML_ELEMENT_NODE || xmlStrcmp(x->name, reinterpret_cast<const xmlChar*>("preset"))) {
+            continue;
+        }
+
+        std::map<std::string, std::string> attributes;
+        for (xmlAttrPtr attribute = x->properties; attribute != nullptr; attribute = attribute->next) {
+            xmlChar* value = xmlNodeListGetString(x->doc, attribute->children, 1);
+            if (value == nullptr) {
+                continue;
+            }
+            attributes.emplace(reinterpret_cast<const char*>(attribute->name), reinterpret_cast<const char*>(value));
+            xmlFree(value);
+        }
+
+        ToolPreset preset = ToolPreset::fromAttributes(attributes);
+        if (!preset.isValid() || preset.id.empty()) {
+            g_warning("Settings: ignoring an incomplete tool preset");
+            continue;
+        }
+        stored.emplace_back(std::move(preset));
+    }
+
+    this->toolPresets = ToolPresetList::fromStored(stored);
+}
+
+void Settings::saveToolPresets(xmlNodePtr root) {
+    xmlNodePtr presets = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("toolPresets"), nullptr);
+
+    char version[16];
+    g_snprintf(version, sizeof(version), "%i", ToolPresetList::STORAGE_VERSION);
+    xmlSetProp(presets, reinterpret_cast<const xmlChar*>("version"), reinterpret_cast<const xmlChar*>(version));
+
+    for (const ToolPreset& preset: this->toolPresets.getPresets()) {
+        xmlNodePtr node = xmlNewChild(presets, nullptr, reinterpret_cast<const xmlChar*>("preset"), nullptr);
+        for (const auto& [name, value]: preset.toAttributes()) {
+            xmlSetProp(node, reinterpret_cast<const xmlChar*>(name.c_str()),
+                       reinterpret_cast<const xmlChar*>(value.c_str()));
+        }
+    }
+}
+
 void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Parse data map
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("data"))) {
@@ -369,6 +426,12 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         parseData(cur, data[reinterpret_cast<const char*>(name)]);
 
         xmlFree(name);
+        return;
+    }
+
+    // Plan 003: the named tool presets, in their own element so their order is kept.
+    if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("toolPresets"))) {
+        parseToolPresets(cur);
         return;
     }
 
@@ -435,6 +498,11 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("workspaceMode")) == 0) {
         this->workspaceMode = workspaceModeFromString(reinterpret_cast<const char*>(value));
         this->workspaceModeLoaded = true;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("favoritePresetCount")) == 0) {
+        // Plan 003: clamp on read as well, so a hand-edited or foreign file cannot ask for more
+        // favourites than the toolbar can hold.
+        this->favoritePresetCount = std::clamp(atoi(reinterpret_cast<const char*>(value)), 0,
+                                               static_cast<int>(ToolPresetList::MAX_FAVORITES));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("focusToolbar")) == 0) {
         this->focusToolbar = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("classicToolbar")) == 0) {
@@ -1060,6 +1128,10 @@ void Settings::save() {
     SAVE_STRING_PROP(classicToolbar);
     SAVE_BOOL_PROP(focusMenubarVisible);
     SAVE_BOOL_PROP(classicMenubarVisible);
+
+    // Plan 003: the named tool presets and how many of their favourites Focus shows directly.
+    SAVE_INT_PROP(favoritePresetCount);
+    saveToolPresets(root);
 
     saveProperty("lastSavePath", char_cast(this->lastSavePath.u8string().c_str()), root);
     saveProperty("lastOpenPath", char_cast(this->lastOpenPath.u8string().c_str()), root);
@@ -2162,6 +2234,25 @@ auto Settings::getWorkspaceToolbar(WorkspaceMode mode) const -> string const& {
 
 auto Settings::isWorkspaceMenubarVisible(WorkspaceMode mode) const -> bool {
     return mode == WorkspaceMode::FOCUS ? this->focusMenubarVisible : this->classicMenubarVisible;
+}
+
+auto Settings::getToolPresets() const -> const ToolPresetList& { return this->toolPresets; }
+
+void Settings::setToolPresets(ToolPresetList presets) {
+    this->toolPresets = std::move(presets);
+    save();
+}
+
+auto Settings::getFavoritePresetCount() const -> int { return this->favoritePresetCount; }
+
+void Settings::setFavoritePresetCount(int count) {
+    const int clamped = std::clamp(count, 0, static_cast<int>(ToolPresetList::MAX_FAVORITES));
+    if (this->favoritePresetCount == clamped) {
+        return;
+    }
+
+    this->favoritePresetCount = clamped;
+    save();
 }
 
 auto Settings::getWorkspaceMode() const -> WorkspaceMode { return this->workspaceMode; }
