@@ -9,6 +9,10 @@
  * @license GNU GPLv2 or later
  */
 
+#include <fstream>
+#include <iterator>
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "control/settings/Settings.h"
@@ -78,4 +82,99 @@ TEST(SettingsTest, testReadWrite) {
         fs::remove(outPath);
     };
     saveReloadTest(fs::temp_directory_path());
+}
+
+/*
+ * Plan 001: Lucide is the default icon theme for new profiles only. An existing
+ * saved preference must survive, and an unrecognised value must keep following
+ * the pre-existing fallback rather than crashing.
+ */
+
+namespace {
+
+/** Write a minimal settings file containing only the given <property> elements. */
+void writeSettingsFile(const fs::path& path, const std::string& properties) {
+    std::ofstream out(path);
+    out << "<?xml version=\"1.0\"?>\n<settings>\n" << properties << "</settings>\n";
+}
+
+/** A fresh, empty directory to hold one test's settings file. */
+auto freshSettingsDir(const char* name) -> fs::path {
+    const fs::path dir = fs::temp_directory_path() / name;
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    return dir;
+}
+
+auto readFile(const fs::path& path) -> std::string {
+    std::ifstream in(path);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+}  // namespace
+
+TEST(SettingsTest, testIconThemeDefaultsToLucideForNewProfiles) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_iconThemeFresh");
+    Settings settings{dir / "settings.xml"};
+
+    // Defaults are applied by the constructor, before any file is read.
+    EXPECT_EQ(settings.getIconTheme(), ICON_THEME_LUCIDE);
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testIconThemeDefaultIsUsedWhenTheSettingsFileIsRegenerated) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_iconThemeDefault");
+    const fs::path file = dir / "settings.xml";
+
+    // load() regenerates a settings file when none exists yet; the regenerated
+    // profile must carry the new default.
+    Settings settings{file};
+    settings.load();
+    EXPECT_EQ(settings.getIconTheme(), ICON_THEME_LUCIDE);
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getIconTheme(), ICON_THEME_LUCIDE);
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testPersistedColorIconThemeIsPreserved) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_iconThemeColor");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, "<property name=\"iconTheme\" value=\"iconsColor\"/>\n");
+
+    Settings settings{file};
+    settings.load();
+
+    EXPECT_EQ(settings.getIconTheme(), ICON_THEME_COLOR);
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testUnknownPersistedIconThemeFallsBackWithoutCrashing) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_iconThemeUnknown");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, "<property name=\"iconTheme\" value=\"iconsNoSuchTheme\"/>\n");
+
+    Settings settings{file};
+    ASSERT_NO_THROW(settings.load());
+
+    // Pre-existing fallback behaviour: an unrecognised value maps to Color.
+    EXPECT_EQ(settings.getIconTheme(), ICON_THEME_COLOR);
+
+    // Saving rewrites the resolved value, so the unrecognised string does not survive.
+    settings.transactionStart();
+    settings.transactionEnd();  // calls save()
+
+    const std::string contents = readFile(file);
+    EXPECT_EQ(contents.find("iconsNoSuchTheme"), std::string::npos);
+    EXPECT_NE(contents.find("iconsColor"), std::string::npos);
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getIconTheme(), ICON_THEME_COLOR);
+
+    fs::remove_all(dir);
 }

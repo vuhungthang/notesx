@@ -31,9 +31,15 @@ ToolButton::ToolButton(std::string id, Category cat, Action action, GVariant* ta
 
 auto ToolButton::createItem(bool horizontal) -> xoj::util::WidgetSPtr {
     GtkWidget* btn = toggle ? gtk_toggle_button_new() : gtk_button_new();
-    gtk_widget_set_can_focus(btn, false);  // todo(gtk4) not necessary anymore
     gtk_button_set_child(GTK_BUTTON(btn), getNewToolIcon());
+    // Tool buttons stay in the keyboard focus chain. .xoj-control gives them the
+    // shared minimum geometry and .xoj-focus-ring the visible focus ring; both are
+    // defined in ui/xournalpp.css and documented in ui/README.md.
+    gtk_widget_add_css_class(btn, "xoj-control");
+    gtk_widget_add_css_class(btn, "xoj-focus-ring");
     gtk_widget_set_tooltip_text(btn, getToolDisplayName().c_str());
+    // Icon-only buttons have no label, so expose the display name to ATK too.
+    atk_object_set_name(gtk_widget_get_accessible(btn), getToolDisplayName().c_str());
     gtk_actionable_set_action_name(GTK_ACTIONABLE(btn), (std::string("win.") + Action_toString(action)).c_str());
     if (target) {
         gtk_actionable_set_action_target_value(GTK_ACTIONABLE(btn), target.get());

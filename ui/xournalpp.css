@@ -1,46 +1,174 @@
 /*
- * Backup before modifying
- *
+ * Xournal++ GTK3 style sheet
  *
  *  Try running Xournal++ like this:    GTK_DEBUG=interactive  xournalpp
  *
  *  See: https://wiki.gnome.org/action/show/Projects/GTK/Inspector
+ *
+ *  File layout
+ *  -----------
+ *   1. Semantic classes      shared visual language; the only place where
+ *                            reusable state values are defined
+ *   2. Floating toolbox      uses the classes from section 1
+ *   3. Toolbar               uses the classes from section 1
+ *   4. Dialogs and settings widgets
+ *
+ *  GTK3 CSS has no custom-property ("variable") system, so shared values are
+ *  expressed either as GTK theme colours (@theme_*, @warning_color, ...) or as
+ *  reusable classes. Where two rules must agree on a literal, they are grouped
+ *  into one selector list rather than repeating the literal.
+ *
+ *  New hard-coded state colours belong in section 1, nowhere else.
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. Semantic classes
+ * ---------------------------------------------------------------------------
+ *
+ * Widgets opt in from code with gtk_style_context_add_class():
+ *
+ *   .xoj-control, .xoj-focus-ring   ToolButton.cpp (toolbar tool buttons)
+ *
+ * Geometry is in logical pixels and is a minimum, so the touch class can be
+ * applied over the standard one.
+ *
+ *   .xoj-control-compact    32x32    dense layouts
+ *   .xoj-control            36x36    standard toolbar density
+ *   .xoj-control-touch      44x44    touch and pen input
+ *
+ * Active state: a selected control must differ from an unselected one by at
+ * least two cues - a filled background AND a border/indicator - never by
+ * colour alone.
+ */
+
+/* Surfaces */
+
+.xoj-surface {
+	background-color: @theme_bg_color;
+	color: @theme_fg_color;
+}
+
+.xoj-surface-elevated {
+	background-color: @theme_bg_color;
+	color: @theme_fg_color;
+
+	box-shadow: 0 0 3px alpha(@theme_fg_color, 0.4);
+}
+
+/* Control geometry */
+
+.xoj-control-compact {
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
+	border-radius: 6px;
+}
+
+.xoj-control {
+	min-width: 36px;
+	min-height: 36px;
+	padding: 0;
+	border-radius: 6px;
+}
+
+.xoj-control-touch {
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0;
+	border-radius: 8px;
+}
+
+/*
+ * Selected tool. Two cues: filled background + border, plus an inset
+ * underline indicator that stays visible when a theme draws no border.
+ * The checked selectors are grouped here so every selected tool - main
+ * toolbar, popover toolbar and floating toolbox - shares one state model.
+ */
+.xoj-tool-active,
+toolbar button:checked,
+popover.toolbar button:checked,
+#floatingToolbox button:checked,
+#pdfFloatingToolGrid button:checked {
+	background-color: alpha(@theme_selected_bg_color, 0.35);
+	border-color: @theme_selected_bg_color;
+
+	box-shadow: inset 0 -2px 0 0 @theme_selected_bg_color;
+}
+
+/* Status surfaces. The editing-mode toolbar shares the warning colour. */
+
+.xoj-status-neutral {
+	color: @theme_fg_color;
+	border-color: alpha(@theme_fg_color, 0.4);
+}
+
+.xoj-status-success {
+	color: @success_color;
+	border-color: @success_color;
+}
+
+.xoj-status-warning,
+toolbar.editing {
+	color: @warning_color;
+	border-color: @warning_color;
+}
+
+.xoj-status-error {
+	color: @error_color;
+	border-color: @error_color;
+}
+
+/* Keyboard focus ring. Deliberately an outline: the toolbar button rules
+ * reset box-shadow and border-color for the non-hovered state, which would
+ * hide a box-shadow based ring. */
+.xoj-focus-ring:focus {
+	outline-style: solid;
+	outline-width: 2px;
+	outline-color: @theme_selected_bg_color;
+	outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. Floating toolbox
+ * ---------------------------------------------------------------------------
  */
 
 #pdfFloatingToolGrid {
-    padding: 7px;
+	padding: 7px;
 }
 
 /*Style the Floating Toolbox!*/
 #floatingToolbox > box,
 #pdfFloatingToolGrid {
-	background-color: white;
+	/* .xoj-surface-elevated */
+	background-color: @theme_bg_color;
+	color: @theme_fg_color;
 	border-radius: 12px;
 
-	box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.4);
+	box-shadow: 0 0 3px alpha(@theme_fg_color, 0.4);
 
 	/* Add a margin. If we don't have this, Gtk clips the shadow!  */
 	margin: 7px;
 }
 
 #floatingToolbox box toolbar {
-	background-color: rgba(255, 255, 255, 0);
+	background-color: transparent;
 }
 
 #floatingToolbox button {
-	background-color: rgba(255, 255, 255, 0.8);
+	background-color: alpha(@theme_bg_color, 0.8);
 	border-radius: 12px;
 }
 
 #pdfFloatingToolGrid button {
-	background: rgba(255, 255, 255, 0.8);
+	background: alpha(@theme_bg_color, 0.8);
 	border: 12px;
 }
 
 #pdfFloatingToolGrid button:hover {
 	border-radius: 12px;
-	background: rgba(245, 245, 245, 0.8);
-	box-shadow: inset 0px 0px 2px gray;
+	background: mix(@theme_bg_color, @theme_fg_color, 0.08);
+	box-shadow: inset 0 0 2px alpha(@theme_fg_color, 0.4);
 }
 
 /*
@@ -48,56 +176,43 @@
 	See https://stackoverflow.com/questions/39824345/use-css-to-style-gtktogglebutton-depending-on-the-state
 */
 #floatingToolbox button:checked {
-	/*background-color: lightblue;*/
-	border-color: lightblue;
-	box-shadow: inset 0px 0px 3px lightblue;
-
+	/* .xoj-tool-active supplies the state; only the transition is local. */
 	transition: background-color 0.5s ease, border-color 0.5s ease, margin 0.3s ease;
 }
 
 #floatingToolbox toolbar,
 #pdfFloatingToolGrid button {
-    /*
-      The Adaptia GTK theme adds box-shadows to toolbars.
-      Remove them to avoid horizontal lines that extend outside
-      the edge of the floating toolbox.
-     */
+	/*
+	  The Adaptia GTK theme adds box-shadows to toolbars.
+	  Remove them to avoid horizontal lines that extend outside
+	  the edge of the floating toolbox.
+	 */
 
-    box-shadow: none;
+	box-shadow: none;
 }
 
 window.darkMode #floatingToolbox button,
 window.darkMode #pdfFloatingToolGrid button {
-	background: rgba(55, 53, 53, 0.5);
+	background: alpha(@theme_bg_color, 0.5);
 	border: none;
 }
 
-window.darkMode #floatingToolbox button:checked {
-	background: rgba(85, 85, 95, 0.1);
-	border-color: lightblue;
-	box-shadow: 0px 0px 3px lightblue;
-}
-
-window.darkMode #floatingToolbox > box,
-window.darkMode #pdfFloatingToolGrid  {
-	background-color: black;
-
-	/*
-	  Lighter gray shadow for better contrast on dark
-	  backgrounds.
-	*/
-	box-shadow: 0px 0px 5px rgba(90, 90, 90, 0.7);
-}
+/* ---------------------------------------------------------------------------
+ * 3. Toolbar
+ * ---------------------------------------------------------------------------
+ */
 
 /* Add additional padding and a border to make editing toolbars easier. */
 toolbar.editing {
 	padding-top: 4px;
 	padding-bottom: 4px;
 
-	border: 4px dashed orange;
+	border-width: 4px;
+	border-style: dashed;
 	border-radius: 3px;
 
-	box-shadow: inset -2px -2px 8px orange;
+	/* @warning_color - see .xoj-status-warning */
+	box-shadow: inset -2px -2px 8px @warning_color;
 }
 
 /*Fix ugly Background drop down button
@@ -119,6 +234,10 @@ toolitem > box > label+label+button
 	background-image:none;
 }
 
+/*
+ * Non tool-button children of a toolbar (combo arrows, page spinner, ...).
+ * Tool buttons get their geometry from .xoj-control, applied in ToolButton.cpp.
+ */
 toolbar button,
 popover.toolbar button {
   padding:3px;
@@ -129,8 +248,13 @@ popover.toolbar button {
 	margin-right: 3px;
 }
 
-toolbar button:not(:checked):not(:active):not(:hover),
-popover.toolbar button:not(:checked):not(:active):not(:hover){
+/*
+ * Flat toolbar buttons. :focus is excluded so a keyboard-focused button keeps
+ * the theme's own focus treatment instead of being flattened, and so the
+ * .xoj-focus-ring outline below is never the only visible cue.
+ */
+toolbar button:not(:checked):not(:active):not(:hover):not(:focus),
+popover.toolbar button:not(:checked):not(:active):not(:hover):not(:focus){
   border-color:transparent;
   box-shadow:none;
   background-color:transparent;
@@ -180,11 +304,16 @@ toolbar button
 */
 
 
+/* ---------------------------------------------------------------------------
+ * 4. Dialogs and settings widgets
+ * ---------------------------------------------------------------------------
+ */
+
 /*
 Labels for subsections of the Settings dialog
 */
 notebook frame>label {
-    color: #666;
+    color: alpha(@theme_fg_color, 0.6);
     font-weight: bold;
 }
 
@@ -193,25 +322,26 @@ menubar, toolbar {
 }
 
 label.setting-button-indicator {
-    border: 1px solid gray;
+    border: 1px solid alpha(@theme_fg_color, 0.4);
     border-radius: 3px;
     margin: 1px;
     padding: 2px;
 }
 
+/* Pressed indicators share .xoj-status-error's colour. */
 label.setting-button-indicator.pressed {
-    background-color: red;
+    background-color: @error_color;
 }
 
 label.setting-touch-indicator {
     border: none;
-    background: radial-gradient(circle at center, alpha(gray,.7) 0%, alpha(gray,.7) 20%, alpha(gray, .1) 60%, alpha(gray, 0.) 100%);
+    background: radial-gradient(circle at center, alpha(@theme_fg_color,.7) 0%, alpha(@theme_fg_color,.7) 20%, alpha(@theme_fg_color, .1) 60%, alpha(@theme_fg_color, 0.) 100%);
     border-radius: 50%;
     margin: 1px;
     padding: 10px;
 }
 label.setting-touch-indicator.pressed {
-    background: radial-gradient(circle at center, red 0%, red 20%, alpha(red, .1) 60%, alpha(red, 0.) 100%);
+    background: radial-gradient(circle at center, @error_color 0%, @error_color 20%, alpha(@error_color, .1) 60%, alpha(@error_color, 0.) 100%);
 }
 
 image.flying-icon {

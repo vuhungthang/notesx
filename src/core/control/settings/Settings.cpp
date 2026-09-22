@@ -111,7 +111,9 @@ void Settings::loadDefault() {
 
     this->stylusCursorType = STYLUS_CURSOR_DOT;
     this->eraserVisibility = ERASER_VISIBILITY_ALWAYS;
-    this->iconTheme = ICON_THEME_COLOR;
+    // Lucide is the default for new profiles only; an existing saved preference
+    // is loaded from the settings file and left untouched.
+    this->iconTheme = ICON_THEME_LUCIDE;
     this->themeVariant = THEME_VARIANT_USE_SYSTEM;
     this->highlightPosition = false;
     this->cursorHighlightColor = 0x80FFFF00;  // Yellow with 50% opacity
