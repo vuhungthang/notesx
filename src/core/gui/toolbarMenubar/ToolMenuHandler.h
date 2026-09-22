@@ -26,7 +26,11 @@
 #include "model/PaperSize.h"
 #include "util/raii/GObjectSPtr.h"
 
+#include "ToolPropertyPanel.h"     // for PresetListListener
+#include "ToolPropertyProvider.h"  // for ToolPropertyRegistry
+
 class AbstractToolItem;
+class ActiveToolSummaryItem;
 class GladeGui;
 class GladeSearchpath;
 class ToolbarData;
@@ -48,8 +52,10 @@ class PageType;
 struct Palette;
 class StylePopoverFactory;
 class Recolor;
+class PresetFavoritesItem;
+class ToolPropertyPopoverFactory;
 
-class ToolMenuHandler {
+class ToolMenuHandler: public PresetListListener {
 public:
     ToolMenuHandler(Control* control, GladeGui* gui);
     virtual ~ToolMenuHandler();
@@ -108,6 +114,9 @@ public:
     void setDefaultNewPageType(const std::optional<PageType>& pt);
     void setDefaultNewPaperSize(const std::optional<PaperSize>& paperSize);
 
+    /// Plan 003: the stored preset list changed, so the favourite strip has to be rebuilt.
+    void presetListChanged() override;
+
 private:
     template <class tool_item, class... Args>
     tool_item& emplaceItem(Args&&... args);
@@ -135,8 +144,17 @@ private:
     IconNameHelper iconNameHelper;
 
     std::unique_ptr<PageTypeSelectionPopover> pageTypeSelectionPopup;
-    std::unique_ptr<StylePopoverFactory> penLineStylePopover;
-    std::unique_ptr<StylePopoverFactory> eraserTypePopover;
+
+    /// Plan 003: which tools have a property panel. Shape and selection register one later.
+    ToolPropertyRegistry propertyRegistry;
+    std::unique_ptr<ToolPropertyPopoverFactory> penPropertyPopover;
+    std::unique_ptr<ToolPropertyPopoverFactory> highlighterPropertyPopover;
+    std::unique_ptr<ToolPropertyPopoverFactory> eraserPropertyPopover;
+
+    /// The two items that show the plan's new state. Owned by the toolbar item list, like every
+    /// other item; the pointers are here so that a change can reach them.
+    ActiveToolSummaryItem* activeToolSummary = nullptr;
+    PresetFavoritesItem* presetFavorites = nullptr;
 
     xoj::util::GObjectSPtr<GSimpleAction> gAction;
 };

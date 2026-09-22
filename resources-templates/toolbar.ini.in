@@ -35,6 +35,10 @@
 #
 # Non-menu items: SELECT,DRAW,PDF_TOOL,TOGGLE_TOUCH_DRAWING
 #
+# Plan 003 items: ACTIVE_TOOL_SUMMARY,PRESET_FAVORITES
+#  ACTIVE_TOOL_SUMMARY: names the active tool, samples its stroke and opens its property popover
+#  PRESET_FAVORITES: the favourite presets, as many as the profile asks for
+#
 # Tool configuration: VERY_FINE,FINE,MEDIUM,THICK,VERY_THICK
 #
 # Item separation: SEPARATOR,SPACER
@@ -42,14 +46,17 @@
 
 
 # Focus: the compact toolbar of the Focus workspace, the default for new profiles.
-# It is deliberately limited to twelve primary actions, so the pen, eraser and
-# highlighter dropdowns stay the way to reach pen sizes and the palette until
-# contextual properties exist (see Plan 003). The footer row is navigation and zoom
+# It is deliberately limited to twelve primary actions. The pen, eraser and
+# highlighter controls now open their own property popover - click the tool again
+# while it is active, or use ACTIVE_TOOL_SUMMARY - so the width, the colour and the
+# palette are one click away without a row of their own (see Plan 003).
+# PRESET_FAVORITES shows as many favourite presets as the profile asks for; the
+# complete list is in the property popover. The footer row is navigation and zoom
 # only. Page creation is INSERT_NEW_PAGE; MANAGE_TOOLBAR and CUSTOMIZE_TOOLBAR are the
 # entry points for choosing or editing another layout.
 [Focus]
 name=Focus
-toolbarTop1 = UNDO,REDO,SEPARATOR, PEN,ERASER,HIGHLIGHTER,SEPARATOR, SELECT,HAND,SEPARATOR, INSERT_NEW_PAGE,SEPARATOR, COLOR_SELECT,SEPARATOR, SHOW_SIDEBAR,SEPARATOR, MANAGE_TOOLBAR,CUSTOMIZE_TOOLBAR
+toolbarTop1 = UNDO,REDO,SEPARATOR, PEN,ERASER,HIGHLIGHTER,SEPARATOR, SELECT,HAND,SEPARATOR, INSERT_NEW_PAGE,SEPARATOR, ACTIVE_TOOL_SUMMARY,PRESET_FAVORITES,COLOR_SELECT,SEPARATOR, SHOW_SIDEBAR,SEPARATOR, MANAGE_TOOLBAR,CUSTOMIZE_TOOLBAR
 toolbarBottom1 = PAGE_SPIN,SPACER,ZOOM_OUT,ZOOM_SLIDER,ZOOM_IN
 
 [All in]

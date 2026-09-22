@@ -40,7 +40,10 @@ namespace {
 /// Toolbar a fresh profile starts with.
 constexpr auto FOCUS_TOOLBAR_ID = "Focus";
 /// Plan 002, step 2: the primary row is limited to a dozen actions.
-constexpr std::size_t FOCUS_PRIMARY_ACTION_LIMIT = 12U;
+/// Plan 003 raises the limit to fourteen: ACTIVE_TOOL_SUMMARY and PRESET_FAVORITES join the
+/// primary row. Both are compact, single-item controls - the active-tool summary and the
+/// favourite-preset strip - so the row stays a compact one-row toolbar.
+constexpr std::size_t FOCUS_PRIMARY_ACTION_LIMIT = 14U;
 /// Rows the Focus preset is allowed to define: one primary row and a compact footer.
 constexpr auto FOCUS_ALLOWED_ROWS = {"toolbarTop1", "toolbarBottom1"};
 
@@ -177,7 +180,7 @@ TEST(ToolbarPresetTest, testFocusPresetStaysCompact) {
     }
 
     // The full palette and the size list stay behind the pen, eraser and highlighter
-    // dropdowns (Plan 003 has not happened yet).
+    // property popovers (Plan 003): the row must not grow a palette or a size list of its own.
     for (const std::string& item: focusItems(*focus)) {
         EXPECT_NE(item.rfind("COLOR(", 0), 0) << item << " exposes the palette directly";
         EXPECT_FALSE(item == "FINE" || item == "MEDIUM" || item == "THICK" || item == "VERY_FINE" ||
@@ -207,8 +210,15 @@ TEST(ToolbarPresetTest, testFocusPresetOnlyUsesKnownItemIdentifiers) {
 
     const ToolbarData* focus = findToolbar(model.getToolbars(), FOCUS_TOOLBAR_ID);
     ASSERT_NE(focus, nullptr);
+
+    // Plan 003 items: they are registered by ToolMenuHandler::populate() but only the Focus
+    // preset uses them, so they cannot be derived from the pre-existing presets above. They are
+    // listed explicitly rather than added to Classic, which must keep its existing controls.
+    const std::vector<std::string> focusOnlyItems{"ACTIVE_TOOL_SUMMARY", "PRESET_FAVORITES"};
+
     for (const std::string& item: focusItems(*focus)) {
-        EXPECT_TRUE(contains(knownItems, item)) << item << " is not used by any pre-existing toolbar preset";
+        EXPECT_TRUE(contains(focusOnlyItems, item) || contains(knownItems, item))
+                << item << " is not a registered toolbar item identifier";
     }
 }
 

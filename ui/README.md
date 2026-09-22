@@ -112,6 +112,7 @@ so it can only come from the system theme.
 | `xopp-snapping-grid` | yes | **no** | — |
 | `xopp-snapping-rotation` | yes | yes | — |
 | `xopp-spacer` | yes | **no** | — |
+| `xopp-star` | yes | **no** | — |
 | `xopp-thickness-fine` | yes | yes | — |
 | `xopp-thickness-finer` | yes | yes | — |
 | `xopp-thickness-medium` | yes | yes | — |
@@ -123,6 +124,7 @@ so it can only come from the system theme.
 | `xopp-tool-link` | yes | yes | — |
 | `xopp-tool-math-tex` | yes | yes | — |
 | `xopp-tool-pencil` | yes | **no** | — |
+| `xopp-tool-properties` | yes | **no** | — |
 | `xopp-tool-text` | yes | yes | — |
 | `xopp-toolbars-customize` | yes | **no** | — |
 | `xopp-toolbars-manage` | yes | **no** | — |
@@ -238,6 +240,20 @@ into a single rule is the only way to keep them in sync).
 | `.xoj-status-warning` | Warning status (`@warning_color`) | available for new widgets |
 | `.xoj-status-error` | Error status (`@error_color`) | available for new widgets |
 | `.xoj-focus-ring` | Visible keyboard focus ring (2 px outline, 2 px offset) | `ToolButton::createItem()` |
+| `.xoj-tool-property-popover` | Padding of a tool's property popover (keeps `.toolbar` for the surface) | `ToolPropertyPopoverFactory::createPopover()` |
+| `.xoj-tool-properties` | The property panel container and its minimum width | `ToolPropertyPanel::createWidget()` |
+| `.xoj-property-header` | Header row of the property panel | `ToolPropertyPanel::buildHeader()` |
+| `.xoj-property-title` | Tool name in the property panel header | `ToolPropertyPanel::buildHeader()` |
+| `.xoj-section-heading` | Section heading inside a property panel | `xoj::toolbar::makeSectionHeading()` |
+| `.xoj-property-label` | Label above a control in a property panel | `xoj::toolbar::makeLabelledRow()` |
+| `.xoj-stroke-preview` | A stroke sample drawn by `xoj::toolbar::makeStrokePreview()` | the same helper |
+| `.xoj-color-swatch` | The current-colour disc of a property panel | `ToolPropertyPanel::buildColorRow()` |
+| `.xoj-preset-row` | One row of the preset list | `ToolPropertyPanel::createPresetRow()` |
+| `.xoj-preset-strip` | The favourite preset strip in the toolbar | `PresetFavoritesItem::createItem()` |
+| `.xoj-preset-strip-empty` | The strip's "no favourite presets" note | the same |
+| `.xoj-preset-button` | A favourite preset button (adds nothing today; the hook exists so a selected-preset state can be added without a new selector) | `PresetFavoritesItem::rebuildStrip()` |
+| `.xoj-tool-summary` | The active tool summary in the toolbar | `ActiveToolSummaryItem::createItem()` |
+| `.xoj-status-line` | Result of the last preset action, also `ATK_ROLE_STATUSBAR` | `ToolPropertyPanel::buildPresetSection()` |
 
 Review rules for changes to this file:
 

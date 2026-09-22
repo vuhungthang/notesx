@@ -18,6 +18,7 @@
 #include "gui/toolbarMenubar/model/ToolbarItem.h"   // for ToolbarItem
 #include "gui/toolbarMenubar/model/ToolbarModel.h"  // for ToolbarModel
 #include "plugin/Plugin.h"                          // for ToolbarButtonEntr<
+#include "util/Assert.h"                            // for xoj_assert_message
 #include "util/GVariantTemplate.h"                  // for gVariantType
 #include "util/GtkUtil.h"
 #include "util/NamedColor.h"  // for NamedColor
@@ -28,19 +29,22 @@
 #include "util/i18n.h"  // for _
 
 #include "AbstractToolItem.h"            // for AbstractToolItem
+#include "ActiveToolSummary.h"           // for ActiveToolSummaryItem
 #include "ColorSelectorToolItem.h"       // for ColorSelectorToolItem
 #include "ColorToolItem.h"               // for ColorToolItem
 #include "DrawingTypeComboToolButton.h"  // for DrawingTypeComboToolButton
 #include "FontButton.h"                  // for FontButton
 #include "PluginPlaceholderLabel.h"      // for PluginPlaceholderLabel
 #include "PluginToolButton.h"            // for PluginToolButton
+#include "PresetFavoritesItem.h"         // for PresetFavoritesItem
 #include "SeparatorItem.h"
 #include "SpacerItem.h"
-#include "StylePopoverFactory.h"     // for ToolButtonWithStylePopover
 #include "ToolButton.h"              // for ToolButton
 #include "ToolPageLayer.h"           // for ToolPageLayer
 #include "ToolPageSpinner.h"         // for ToolPageSpinner
 #include "ToolPdfCombocontrol.h"     // for ToolPdfCombocontrol
+#include "ToolPropertyPopover.h"     // for ToolPropertyPopoverFactory
+#include "ToolPropertyProviders.h"   // for addBuiltInToolPropertyProviders
 #include "ToolSelectCombocontrol.h"  // for ToolSelectComboc...
 #include "ToolZoomSlider.h"          // for ToolZoomSlider
 #include "TooltipToolButton.h"       // for TooltipToolButton
@@ -363,22 +367,31 @@ void ToolMenuHandler::initToolItems() {
      * Menu Tool
      * ------------------------------------------------------------------------
      */
-    this->penLineStylePopover = std::make_unique<StylePopoverFactory>(
-            Action::TOOL_PEN_LINE_STYLE,
-            std::vector<StylePopoverFactory::Entry>{{_("standard"), iconName("line-style-plain"), "plain"},
-                                                    {_("dashed"), iconName("line-style-dash"), "dash"},
-                                                    {_("dash-/ dotted"), iconName("line-style-dash-dot"), "dashdot"},
-                                                    {_("dotted"), iconName("line-style-dot"), "dot"}});
-    emplaceCustomItemWithTargetAndMenu("PEN", Cat::TOOLS, Action::SELECT_TOOL, TOOL_PEN, "tool-pencil", _("Pen"),
-                                       this->penLineStylePopover.get());
+    /*
+     * Plan 003: the pen, highlighter and eraser controls carry the property popover of their own
+     * tool instead of a single-purpose line style or eraser type menu. The property panel is a
+     * superset - it keeps the width, the colour, the fill and, for these tools, the line style
+     * and the eraser mode - and clicking the tool's own control while it is already active opens
+     * it (see ToolButton::createItem).
+     */
+    ToolConfigAdapter& adapter = *this->control->getToolConfigAdapter();
+    Settings& settings = *this->control->getSettings();
 
-    this->eraserTypePopover = std::make_unique<StylePopoverFactory>(
-            Action::TOOL_ERASER_TYPE,
-            std::vector<StylePopoverFactory::Entry>{{_("standard"), ERASER_TYPE_DEFAULT},
-                                                    {_("whiteout"), ERASER_TYPE_WHITEOUT},
-                                                    {_("delete stroke"), ERASER_TYPE_DELETE_STROKE}});
+    xoj::toolbar::addBuiltInToolPropertyProviders(this->propertyRegistry, this->iconNameHelper);
+
+    auto makePropertyPopover = [&](ToolType toolType) -> std::unique_ptr<ToolPropertyPopoverFactory> {
+        ToolPropertyProvider* provider = this->propertyRegistry.find(toolType);
+        xoj_assert_message(provider != nullptr, "No property provider was registered for this tool");
+        return std::make_unique<ToolPropertyPopoverFactory>(adapter, settings, *provider, this->parent, this);
+    };
+
+    this->penPropertyPopover = makePropertyPopover(TOOL_PEN);
+    emplaceCustomItemWithTargetAndMenu("PEN", Cat::TOOLS, Action::SELECT_TOOL, TOOL_PEN, "tool-pencil", _("Pen"),
+                                       this->penPropertyPopover.get());
+
+    this->eraserPropertyPopover = makePropertyPopover(TOOL_ERASER);
     emplaceCustomItemWithTargetAndMenu("ERASER", Cat::TOOLS, Action::SELECT_TOOL, TOOL_ERASER, "tool-eraser",
-                                       _("Eraser"), this->eraserTypePopover.get());
+                                       _("Eraser"), this->eraserPropertyPopover.get());
 
     // Add individual line styles as toolbar items
     emplaceCustomItemWithTarget("PLAIN", Cat::TOOLS, Action::TOOL_PEN_LINE_STYLE, "plain", "line-style-plain-with-pen",
@@ -391,8 +404,9 @@ void ToolMenuHandler::initToolItems() {
                                 _("dotted"));
 
 
-    emplaceCustomItemWithTarget("HIGHLIGHTER", Cat::TOOLS, Action::SELECT_TOOL, TOOL_HIGHLIGHTER, "tool-highlighter",
-                                _("Highlighter"));
+    this->highlighterPropertyPopover = makePropertyPopover(TOOL_HIGHLIGHTER);
+    emplaceCustomItemWithTargetAndMenu("HIGHLIGHTER", Cat::TOOLS, Action::SELECT_TOOL, TOOL_HIGHLIGHTER,
+                                       "tool-highlighter", _("Highlighter"), this->highlighterPropertyPopover.get());
 
     emplaceCustomItemWithTarget("TEXT", Cat::TOOLS, Action::SELECT_TOOL, TOOL_TEXT, "tool-text", _("Text"));
     emplaceCustomItemWithTarget("LINK", Cat::TOOLS, Action::SELECT_TOOL, TOOL_LINK, "tool-link", _("Add/Edit Link"));
@@ -513,6 +527,24 @@ void ToolMenuHandler::initToolItems() {
 
     emplaceItem<SeparatorItem>("SEPARATOR");
     emplaceItem<SpacerItem>("SPACER");
+
+    /*
+     * Plan 003: the active tool summary and the favourite preset strip.
+     *
+     * Both are non-menu items. They are registered here like every other item, so a profile
+     * reaches them by name from toolbar.ini - a toolbar that does not name them does not show
+     * them, and Classic is untouched.
+     */
+    this->activeToolSummary = &emplaceItem<ActiveToolSummaryItem>(
+            "ACTIVE_TOOL_SUMMARY", adapter, this->propertyRegistry, settings, this->parent, this, this->iconNameHelper);
+    this->presetFavorites =
+            &emplaceItem<PresetFavoritesItem>("PRESET_FAVORITES", adapter, settings, this->iconNameHelper);
+}
+
+void ToolMenuHandler::presetListChanged() {
+    if (this->presetFavorites != nullptr) {
+        this->presetFavorites->presetListChanged();
+    }
 }
 
 void ToolMenuHandler::setPageInfo(size_t currentPage, size_t pageCount, size_t pdfpage) {

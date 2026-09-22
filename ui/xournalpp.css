@@ -134,6 +134,69 @@ toolbar.editing {
 	outline-offset: -2px;
 }
 
+/*
+ * Tool properties (Plan 003). One popover per tool, built from
+ * gui/toolbarMenubar/ToolPropertyPanel.cpp, plus the two toolbar widgets that
+ * mirror the same state: ActiveToolSummary.cpp and PresetFavoritesItem.cpp.
+ *
+ * The popover keeps the .toolbar class, so it inherits the existing popover
+ * surface and its dark-mode rule; these classes only add the panel's own
+ * spacing and type hierarchy.
+ */
+.xoj-tool-property-popover {
+	padding: 8px;
+}
+
+.xoj-tool-properties {
+	min-width: 260px;
+}
+
+.xoj-property-header {
+	padding: 2px 6px 0 6px;
+}
+
+.xoj-property-title {
+	font-weight: bold;
+}
+
+.xoj-section-heading,
+.xoj-property-label {
+	font-size: smaller;
+	opacity: 0.75;
+}
+
+.xoj-section-heading {
+	font-weight: bold;
+	margin-top: 4px;
+}
+
+.xoj-preset-row {
+	margin: 1px 0;
+}
+
+/*
+ * The status line reports the result of the last preset action. A reader who
+ * cannot see the list move reads it, so it is a status bar to ATK as well.
+ */
+.xoj-status-line {
+	font-size: smaller;
+	opacity: 0.8;
+}
+
+/*
+ * The favourite preset strip. The buttons are ordinary .xoj-control buttons;
+ * the strip only removes the toolbar's own item spacing so the presets read as
+ * one group.
+ */
+.xoj-preset-strip {
+	margin: 0 2px;
+}
+
+.xoj-preset-strip-empty {
+	opacity: 0.6;
+	padding: 0 6px;
+}
+
 /* ---------------------------------------------------------------------------
  * 2. Floating toolbox
  * ---------------------------------------------------------------------------
