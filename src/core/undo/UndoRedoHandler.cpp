@@ -215,14 +215,16 @@ auto UndoRedoHandler::isChanged() -> bool {
 
 auto UndoRedoHandler::isChangedAutosave() -> bool {
     if (this->undoList.empty()) {
-        return this->autosavedUndo;
+        return this->autosavedUndo != nullptr;
     }
     return this->autosavedUndo != this->undoList.back().get();
 }
 
-void UndoRedoHandler::documentAutosaved() {
-    this->autosavedUndo = this->undoList.empty() ? nullptr : this->undoList.back().get();
+auto UndoRedoHandler::captureAutosavePosition() const -> AutosavePosition {
+    return AutosavePosition{this->undoList.empty() ? nullptr : this->undoList.back().get()};
 }
+
+void UndoRedoHandler::documentAutosaved(AutosavePosition position) { this->autosavedUndo = position.top; }
 
 void UndoRedoHandler::documentSaved() {
     this->savedUndo = this->undoList.empty() ? nullptr : this->undoList.back().get();

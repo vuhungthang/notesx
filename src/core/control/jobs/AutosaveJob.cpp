@@ -48,6 +48,14 @@ void AutosaveJob::run() {
     Util::clearExtensions(filepath);
     filepath += ".autosave.xopp";
 
+    /*
+     * Plan 004: the undo position is captured here, with the contents, and committed only after
+     * the swap below succeeded. It is what tells the next tick whether the file on disk still
+     * covers the document. Reading the position off the top of the undo history at the end of the
+     * write instead would claim an edit that arrived while the file was being serialized - an edit
+     * that is not in it - and no recovery copy would be written for that edit.
+     */
+    const auto autosavePosition = control->getUndoRedoHandler()->captureAutosavePosition();
     handler.prepareSave(doc, filepath);
     doc->unlock_shared();
 
@@ -78,11 +86,13 @@ void AutosaveJob::run() {
             this->recoveryFile = filepath;
 
             /*
-             * Plan 004: the undo position is recorded only now, when the copy is really on disk.
-             * Recording it before the write would make a failed autosave look autosaved, and the
-             * next tick would then skip the retry that the user needs.
+             * Plan 004: the position captured when the contents were snapshotted is recorded only
+             * now, once the copy is really on disk. Committing the position the write ends at
+             * instead would mark an edit that arrived mid-write as covered by a file that predates
+             * it, and the next tick would then skip the retry the user needs; a write that fails
+             * commits nothing, so the edit is still owed a copy.
              */
-            control->getUndoRedoHandler()->documentAutosaved();
+            control->getUndoRedoHandler()->documentAutosaved(autosavePosition);
         } catch (const fs::filesystem_error& e) {
             auto fmtstr = _F("Could not rename autosave file from \"{1}\" to \"{2}\": {3}");
             this->error = FS(fmtstr % tempfile.u8string() % filepath.u8string() % e.what());

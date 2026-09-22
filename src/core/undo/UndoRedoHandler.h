@@ -52,7 +52,25 @@ public:
 
     bool isChanged();
     bool isChangedAutosave();
-    void documentAutosaved();
+
+    /**
+     * The undo position the document contents of a recovery copy sit at.
+     *
+     * An autosave takes one of these where it snapshots the contents, and commits it only once the
+     * recovery file really is on disk. Reading the position off the top of the undo history when
+     * the write ends instead would record an edit that arrived while the file was being
+     * serialized, which the copy does not contain: `isChangedAutosave()` would then answer false
+     * and the next tick would skip the write that edit needs.
+     */
+    struct AutosavePosition {
+        /// The action on top of the undo history when the snapshot was taken; null if it was empty.
+        const UndoAction* top = nullptr;
+    };
+
+    /// The undo position of the contents an autosave is about to snapshot.
+    auto captureAutosavePosition() const -> AutosavePosition;
+    /// Record `position` as what the recovery copy that was just written contains.
+    void documentAutosaved(AutosavePosition position);
     void documentSaved();
 
 private:
@@ -64,7 +82,9 @@ private:
     std::deque<UndoActionPtr> redoList;
 
     UndoAction* savedUndo = nullptr;
-    UndoAction* autosavedUndo = nullptr;
+    /// The position of the contents of the recovery copy on disk; only ever advanced by a write
+    /// that succeeded, and only ever to a position captured before that write started.
+    const UndoAction* autosavedUndo = nullptr;
 
     std::vector<UndoRedoListener*> listener;
 
