@@ -98,6 +98,7 @@ void Settings::loadDefault() {
     this->showSidebar = true;
     this->sidebarWidth = 150;
     this->sidebarNumberingStyle = SidebarNumberingStyle::DEFAULT;
+    this->sidebarPageLayoutMode = SidebarPageLayoutMode::DEFAULT;
 
     this->showToolbar = true;
     // Plan 002: a fresh profile starts in the Focus workspace. Existing profiles are
@@ -550,6 +551,14 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
             g_warning("Settings::Invalid sidebarNumberingStyle value. Reset to default.");
         }
         this->sidebarNumberingStyle = static_cast<SidebarNumberingStyle>(num);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarPageLayoutMode")) == 0) {
+        int num = std::stoi(reinterpret_cast<char*>(value));
+        if (num < static_cast<int>(SidebarPageLayoutMode::MIN) ||
+            static_cast<int>(SidebarPageLayoutMode::MAX) < num) {
+            num = static_cast<int>(SidebarPageLayoutMode::DEFAULT);
+            g_warning("Settings::Invalid sidebarPageLayoutMode value. Reset to default.");
+        }
+        this->sidebarPageLayoutMode = static_cast<SidebarPageLayoutMode>(num);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarWidth")) == 0) {
         this->sidebarWidth = std::max<int>(g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10), 50);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarOnRight")) == 0) {
@@ -1152,6 +1161,7 @@ void Settings::save() {
     SAVE_BOOL_PROP(showSidebar);
     SAVE_INT_PROP(sidebarWidth);
     xmlNode = saveProperty("sidebarNumberingStyle", static_cast<int>(sidebarNumberingStyle), root);
+    xmlNode = saveProperty("sidebarPageLayoutMode", static_cast<int>(sidebarPageLayoutMode), root);
 
     SAVE_BOOL_PROP(sidebarOnRight);
     SAVE_BOOL_PROP(scrollbarOnLeft);
@@ -1658,6 +1668,18 @@ void Settings::setSidebarNumberingStyle(SidebarNumberingStyle numberingStyle) {
     }
 
     this->sidebarNumberingStyle = numberingStyle;
+
+    save();
+}
+
+auto Settings::getSidebarPageLayoutMode() const -> SidebarPageLayoutMode { return this->sidebarPageLayoutMode; }
+
+void Settings::setSidebarPageLayoutMode(SidebarPageLayoutMode layoutMode) {
+    if (this->sidebarPageLayoutMode == layoutMode) {
+        return;
+    }
+
+    this->sidebarPageLayoutMode = layoutMode;
 
     save();
 }

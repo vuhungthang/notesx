@@ -48,12 +48,12 @@ SidebarPreviewBase::SidebarPreviewBase(Control* control, const char* menuId, con
             }),
             this);
 
-    Builder builder(control->getGladeSearchPath(), XML_FILE);
-    GMenuModel* menu = G_MENU_MODEL(builder.get<GObject>(menuId));
+    this->builder = std::make_unique<Builder>(control->getGladeSearchPath(), XML_FILE);
+    GMenuModel* menu = G_MENU_MODEL(this->builder->get<GObject>(menuId));
     contextMenu.reset(GTK_MENU(gtk_menu_new_from_model(menu)), xoj::util::adopt);
     gtk_menu_attach_to_widget(contextMenu.get(), mainBox.get(), nullptr);
 
-    gtk_box_append(GTK_BOX(mainBox.get()), builder.get(toolbarId));
+    gtk_box_append(GTK_BOX(mainBox.get()), this->builder->get(toolbarId));
 
     gtk_widget_show_all(mainBox.get());
 }
@@ -91,6 +91,36 @@ void SidebarPreviewBase::layout() {
 auto SidebarPreviewBase::hasData() -> bool { return true; }
 
 auto SidebarPreviewBase::getWidget() -> GtkWidget* { return this->mainBox.get(); }
+
+void SidebarPreviewBase::setMiniaturesWidget(GtkWidget* widget) {
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(this->scrollableBox.get()), widget);
+}
+
+void SidebarPreviewBase::detachFromContainer(GtkWidget* widget) {
+    if (widget == nullptr) {
+        return;
+    }
+    GtkWidget* parent = gtk_widget_get_parent(widget);
+    if (parent == nullptr) {
+        return;
+    }
+
+    // A GtkFlowBox and a GtkListBox own their children through a wrapper; the widget has to be
+    // taken out of the wrapper, not out of the box. Removing the wrapper while the widget is still
+    // in it destroys the wrapper, and a destroyed wrapper takes its child - and the whole subtree
+    // of that child, thumbnail and metadata included - down with it.
+    if (GTK_IS_FLOW_BOX_CHILD(parent) || GTK_IS_LIST_BOX_ROW(parent)) {
+        GtkWidget* box = gtk_widget_get_parent(parent);
+        // Out of the wrapper first: the widget and everything it holds stay alive.
+        gtk_container_remove(GTK_CONTAINER(parent), widget);
+        if (box != nullptr) {
+            gtk_container_remove(GTK_CONTAINER(box), parent);
+        }
+        return;
+    }
+
+    gtk_container_remove(GTK_CONTAINER(parent), widget);
+}
 
 void SidebarPreviewBase::documentChanged(DocumentChangeType type) {
     if (type == DOCUMENT_CHANGE_COMPLETE || type == DOCUMENT_CHANGE_CLEARED) {

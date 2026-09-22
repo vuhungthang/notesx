@@ -57,9 +57,36 @@ public:
     virtual void updateSize();
 
     /**
+     * Throw the rendered thumbnail away, so the next paint draws the placeholder and schedules the
+     * thumbnail to be rendered again.
+     *
+     * The buffer is rendered at the zoom the sidebar had when the job ran, so anything that
+     * changes that zoom - the page navigator's density modes do - has to invalidate it, or the
+     * card would show a thumbnail of the wrong size.
+     */
+    void invalidateThumbnail();
+
+    /**
      * @return What should be rendered
      */
     virtual PreviewRenderType getRenderType() const = 0;
+
+    /**
+     * The thumbnail of this entry, or nullptr if it is gone.
+     *
+     * The widget outlives the entry: a rendering job holds a reference to the widget while it
+     * runs, so the job has to ask whether the entry is still there before it touches it.
+     */
+    static SidebarPreviewBaseEntry* fromWidget(GtkWidget* widget);
+
+    /// A thumbnail was rendered: the entry is no longer loading and is not in an error state.
+    void thumbnailReady();
+    /// The thumbnail could not be rendered.
+    void markRenderError();
+    /// The thumbnail is still being rendered.
+    bool isLoading() const;
+    /// The thumbnail could not be rendered.
+    bool hasRenderError() const;
 
 private:
     static gboolean drawCallback(GtkWidget* widget, cairo_t* cr, SidebarPreviewBaseEntry* preview);
@@ -70,11 +97,24 @@ protected:
     virtual void drawLoadingPage();
     virtual void paint(cairo_t* cr);
 
+    /**
+     * What is drawn in place of a thumbnail: "Loading..." normally, and the reason when the
+     * render failed.
+     */
+    virtual const char* getPlaceholderText() const;
+
+    /// Called when the thumbnail state changed, so a card can refresh what it shows.
+    virtual void thumbnailStateChanged();
+
 protected:
     /**
      * If this page is currently selected
      */
     bool selected = false;
+
+    /// Thumbnail state, only ever touched from the UI thread.
+    bool loading = true;
+    bool renderError = false;
 
     int imageWidth;
     int imageHeight;

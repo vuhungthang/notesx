@@ -41,6 +41,8 @@ private:
     void initGraphics();
     void clipToPage();
     void finishPaint();
+    /// The thumbnail could not be rendered
+    void finishFailed();
     void drawPage();
 
 private:

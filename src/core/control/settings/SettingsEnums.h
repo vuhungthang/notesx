@@ -135,6 +135,24 @@ enum class SidebarNumberingStyle {
     DEFAULT = SidebarNumberingStyle::NUMBER_BELOW_PREVIEW
 };
 
+/**
+ * How the page navigator presents its pages (Plan 005).
+ *
+ * A UI preference, not document data: the same file opened in two profiles can be browsed as
+ * thumbnails or as a list without either of them saving anything into the document.
+ */
+enum class SidebarPageLayoutMode {
+    /* Thumbnails, wrapped into as many columns as the sidebar is wide */
+    OVERVIEW = 0,
+    /* One row per page, with room for the page number and the page name */
+    LIST = 1,
+
+    /* MIN, MAX and Default values. Need to be updated when a mode is added. */
+    MIN = SidebarPageLayoutMode::OVERVIEW,
+    MAX = SidebarPageLayoutMode::LIST,
+    DEFAULT = SidebarPageLayoutMode::OVERVIEW
+};
+
 constexpr auto buttonToString(Button button) -> const char* {
     switch (button) {
         case BUTTON_ERASER:

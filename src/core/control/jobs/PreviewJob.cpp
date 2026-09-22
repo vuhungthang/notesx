@@ -48,7 +48,25 @@ void PreviewJob::initGraphics() {
 void PreviewJob::finishPaint() {
     auto lock = std::lock_guard(this->sidebarPreview->drawingMutex);
     this->sidebarPreview->buffer = std::move(this->buffer);
-    Util::execInUiThread([btn = this->sidebarPreview->button]() { gtk_widget_queue_draw(btn.get()); });
+    Util::execInUiThread([btn = this->sidebarPreview->button]() {
+        // The entry may be gone by now; the widget is kept alive by this lambda, the entry is not.
+        if (auto* entry = SidebarPreviewBaseEntry::fromWidget(btn.get()); entry != nullptr) {
+            entry->thumbnailReady();
+        }
+        gtk_widget_queue_draw(btn.get());
+    });
+}
+
+/**
+ * @brief Report that the thumbnail could not be rendered
+ */
+void PreviewJob::finishFailed() {
+    Util::execInUiThread([btn = this->sidebarPreview->button]() {
+        if (auto* entry = SidebarPreviewBaseEntry::fromWidget(btn.get()); entry != nullptr) {
+            entry->markRenderError();
+        }
+        gtk_widget_queue_draw(btn.get());
+    });
 }
 
 void PreviewJob::drawPage() {
@@ -126,6 +144,10 @@ void PreviewJob::run() {
     }
 
     initGraphics();
+    if (cairo_surface_status(this->buffer.get()) != CAIRO_STATUS_SUCCESS) {
+        finishFailed();
+        return;
+    }
     clipToPage();
     drawPage();
     finishPaint();

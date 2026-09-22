@@ -2,36 +2,80 @@
 <interface>
     <requires lib="gtk+" version="3.24"/>
     <object class="GtkBox" id="PreviewPagesToolbar">
+        <!--
+            Two rows rather than one: the actions and the density toggle both have to stay usable
+            at the narrowest sidebar (Plan 005, step 6).
+        -->
+        <property name="orientation">vertical</property>
         <style>
             <class name="toolbar"/>
-            <class name="linked"/>
         </style>
         <child>
-            <object class="GtkButton">
-                <property name="action-name">win.move-page-towards-beginning</property>
+            <object class="GtkBox">
+                <property name="orientation">horizontal</property>
+                <style>
+                    <class name="linked"/>
+                </style>
+                <child>
+                    <object class="GtkButton" id="btPagesMoveUp">
+                        <property name="name">btPagesMoveUp</property>
+                        <property name="action-name">win.move-page-towards-beginning</property>
+                        <property name="tooltip-text">Swap the current page with the one above</property>
+                        <style><class name="xoj-control-compact"/></style>
 <child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">go-up</property></object></child>
-                <property name="tooltip-text">Swap the current page with the one above</property>
-            </object>
-        </child>
-        <child>
-            <object class="GtkButton">
-                <property name="action-name">win.move-page-towards-end</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton" id="btPagesMoveDown">
+                        <property name="name">btPagesMoveDown</property>
+                        <property name="action-name">win.move-page-towards-end</property>
+                        <property name="tooltip-text">Swap the current page with the one below</property>
+                        <style><class name="xoj-control-compact"/></style>
 <child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">go-down</property></object></child>
-                <property name="tooltip-text">Swap the current page with the one below</property>
-            </object>
-        </child>
-        <child>
-            <object class="GtkButton">
-                <property name="action-name">win.duplicate-page</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton" id="btPagesDuplicate">
+                        <property name="name">btPagesDuplicate</property>
+                        <property name="action-name">win.duplicate-page</property>
+                        <property name="tooltip-text">Insert a copy of the current page below</property>
+                        <style><class name="xoj-control-compact"/></style>
 <child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">edit-copy</property></object></child>
-                <property name="tooltip-text">Insert a copy of the current page below</property>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkButton" id="btPagesDelete">
+                        <property name="name">btPagesDelete</property>
+                        <property name="action-name">win.delete-page</property>
+                        <property name="tooltip-text">Delete this page</property>
+                        <style><class name="xoj-control-compact"/></style>
+<child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">delete</property></object></child>
+                    </object>
+                </child>
             </object>
         </child>
         <child>
-            <object class="GtkButton">
-                <property name="action-name">win.delete-page</property>
-<child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">delete</property></object></child>
-                <property name="tooltip-text">Delete this page</property>
+            <object class="GtkBox">
+                <property name="orientation">horizontal</property>
+                <style>
+                    <class name="linked"/>
+                </style>
+                <child>
+                    <object class="GtkToggleButton" id="btPagesOverview">
+                        <property name="name">btPagesOverview</property>
+                        <property name="tooltip-text">Show page thumbnails</property>
+                        <style><class name="xoj-control-compact"/></style>
+<child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">view-grid-symbolic</property></object></child>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkToggleButton" id="btPagesList">
+                        <property name="name">btPagesList</property>
+                        <property name="tooltip-text">Show one row per page, with the page name</property>
+                        <style><class name="xoj-control-compact"/></style>
+<child><object class="GtkImage"><property name="visible">1</property><property name="can-focus">0</property><property name="icon-name">view-list-symbolic</property></object></child>
+                    </object>
+                </child>
             </object>
         </child>
     </object>
@@ -58,6 +102,12 @@
             <item>
                 <attribute name="label" translatable="yes">Move Down</attribute>
                 <attribute name="action">win.move-page-towards-end</attribute>
+            </item>
+        </section>
+        <section>
+            <item>
+                <attribute name="label" translatable="yes">Export</attribute>
+                <attribute name="action">win.export-as</attribute>
             </item>
         </section>
         <section>

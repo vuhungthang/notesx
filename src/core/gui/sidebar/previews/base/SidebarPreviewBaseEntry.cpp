@@ -18,11 +18,15 @@
 
 static constexpr int MAX_MINIATURE_SIZE = 500;  ///< in pixels - avoid things going very wrong when pages are huge
 
+/// The entry a preview widget belongs to, for the rendering jobs that outlive it.
+constexpr auto ENTRY_DATA_KEY = "xoj-sidebar-preview-entry";
+
 SidebarPreviewBaseEntry::SidebarPreviewBaseEntry(SidebarPreviewBase* sidebar, const PageRef& page):
         sidebar(sidebar), page(page), button(gtk_button_new(), xoj::util::adopt) {
 
     updateSize();
     gtk_widget_set_events(this->button.get(), GDK_EXPOSURE_MASK);
+    g_object_set_data(G_OBJECT(this->button.get()), ENTRY_DATA_KEY, this);
 
     g_signal_connect(this->button.get(), "draw", G_CALLBACK(drawCallback), this);
 
@@ -47,8 +51,48 @@ SidebarPreviewBaseEntry::SidebarPreviewBaseEntry(SidebarPreviewBase* sidebar, co
 }
 
 SidebarPreviewBaseEntry::~SidebarPreviewBaseEntry() {
+    g_object_set_data(G_OBJECT(this->button.get()), ENTRY_DATA_KEY, nullptr);
     this->sidebar->getControl()->getScheduler()->removeSidebar(this);
+    SidebarPreviewBase::detachFromContainer(this->button.get());
 }
+
+auto SidebarPreviewBaseEntry::fromWidget(GtkWidget* widget) -> SidebarPreviewBaseEntry* {
+    if (widget == nullptr) {
+        return nullptr;
+    }
+    return static_cast<SidebarPreviewBaseEntry*>(g_object_get_data(G_OBJECT(widget), ENTRY_DATA_KEY));
+}
+
+void SidebarPreviewBaseEntry::thumbnailReady() {
+    this->loading = false;
+    this->renderError = false;
+    thumbnailStateChanged();
+}
+
+void SidebarPreviewBaseEntry::markRenderError() {
+    this->loading = false;
+    this->renderError = true;
+
+    {
+        std::lock_guard<std::mutex> lock(this->drawingMutex);
+        // The placeholder drawn while the render was running says "Loading..."; dropping it makes
+        // the next paint draw the reason instead.
+        this->buffer.reset();
+    }
+
+    thumbnailStateChanged();
+    gtk_widget_queue_draw(this->button.get());
+}
+
+auto SidebarPreviewBaseEntry::isLoading() const -> bool { return this->loading; }
+
+auto SidebarPreviewBaseEntry::hasRenderError() const -> bool { return this->renderError; }
+
+auto SidebarPreviewBaseEntry::getPlaceholderText() const -> const char* {
+    return this->renderError ? _("Preview unavailable") : _("Loading...");
+}
+
+void SidebarPreviewBaseEntry::thumbnailStateChanged() {}
 
 auto SidebarPreviewBaseEntry::drawCallback(GtkWidget* widget, cairo_t* cr, SidebarPreviewBaseEntry* preview)
         -> gboolean {
@@ -67,6 +111,19 @@ void SidebarPreviewBaseEntry::setSelected(bool selected) {
 
 void SidebarPreviewBaseEntry::repaint() { sidebar->getControl()->getScheduler()->addRepaintSidebar(this); }
 
+void SidebarPreviewBaseEntry::invalidateThumbnail() {
+    {
+        std::lock_guard<std::mutex> lock(this->drawingMutex);
+        this->buffer.reset();
+    }
+
+    this->loading = true;
+    this->renderError = false;
+
+    thumbnailStateChanged();
+    gtk_widget_queue_draw(this->button.get());
+}
+
 void SidebarPreviewBaseEntry::drawLoadingPage() {
     this->buffer.reset(cairo_image_surface_create(CAIRO_FORMAT_ARGB32, imageWidth, imageHeight), xoj::util::adopt);
 
@@ -80,7 +137,7 @@ void SidebarPreviewBaseEntry::drawLoadingPage() {
 
     cairo_scale(cr2, zoom, zoom);
 
-    const char* txtLoading = _("Loading...");
+    const char* txtLoading = getPlaceholderText();
 
     cairo_text_extents_t ex;
     cairo_set_source_rgb(cr2, 0.5, 0.5, 0.5);
@@ -121,7 +178,9 @@ void SidebarPreviewBaseEntry::paint(cairo_t* cr) {
     bool doRepaint = false;
     if (!this->buffer) {
         drawLoadingPage();
-        doRepaint = true;
+        // A render that already failed is not asked for again: it would fail the same way, and the
+        // placeholder now says why.
+        doRepaint = !this->renderError;
     }
 
     cairo_set_source_surface(cr, this->buffer.get(), 0, 0);

@@ -403,6 +403,12 @@ public:
     SidebarNumberingStyle getSidebarNumberingStyle() const;
     void setSidebarNumberingStyle(SidebarNumberingStyle numberingStyle);
 
+    /**
+     * Plan 005: whether the page navigator shows thumbnails or a list.
+     */
+    SidebarPageLayoutMode getSidebarPageLayoutMode() const;
+    void setSidebarPageLayoutMode(SidebarPageLayoutMode layoutMode);
+
     bool isHighlightPosition() const;
     void setHighlightPosition(bool highlight);
 
@@ -752,6 +758,11 @@ private:
      * Sidebar page number style
      */
     SidebarNumberingStyle sidebarNumberingStyle;
+
+    /**
+     * Plan 005: how the page navigator presents its pages
+     */
+    SidebarPageLayoutMode sidebarPageLayoutMode;
 
     /**
      * Show a colored circle around the cursor

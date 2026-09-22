@@ -277,6 +277,95 @@ toolbar.editing {
 	border: 12px;
 }
 
+/* ---------------------------------------------------------------------------
+ * 5. Page navigator (Plan 005)
+ * ---------------------------------------------------------------------------
+ */
+
+/*
+ * The page navigator. A card is a page: it carries the thumbnail, the page
+ * number and the page's name, and it says three things on its own - which page
+ * the editor is on, which pages are selected, and where a dragged page would
+ * land. Each of those is a class rather than a colour, so a theme can restyle
+ * the navigator without any of them being lost, and the selection is never
+ * signalled by colour alone: the marker glyph and the accessible name of the
+ * card carry it too.
+ */
+.xoj-page-card {
+	padding: 2px;
+	border-radius: 6px;
+	border: 2px solid transparent;
+}
+
+/* The page the editor is on. */
+.xoj-page-card-current {
+	border-color: alpha(@theme_selected_bg_color, 0.55);
+}
+
+/* Every selected page. */
+.xoj-page-card-selected {
+	background-color: alpha(@theme_selected_bg_color, 0.25);
+	border-color: @theme_selected_bg_color;
+}
+
+/*
+ * The tick that marks a selected card. It is drawn next to the page number, so
+ * the selection is readable without the colours above.
+ */
+.xoj-page-selection-marker {
+	font-weight: bold;
+}
+
+/* A thumbnail that is still being rendered, and one that could not be. */
+.xoj-page-card-loading,
+.xoj-page-card-error {
+	font-size: smaller;
+	opacity: 0.75;
+}
+
+.xoj-page-card-error {
+	color: @error_color;
+}
+
+/*
+ * The two densities. List mode gives the metadata the room the thumbnail does
+ * not need, so a page stays identifiable when the sidebar is narrow.
+ */
+.xoj-page-card-overview {
+	min-width: 64px;
+}
+
+.xoj-page-card-list {
+	min-width: 120px;
+}
+
+.xoj-page-card-metadata {
+	font-size: smaller;
+}
+
+/*
+ * Where a dragged page would land. A line on the edge the drop asks for, so
+ * the indicator reads in both densities and in either direction.
+ */
+.xoj-page-card-drop-before {
+	border-top-color: @theme_selected_bg_color;
+	border-top-width: 3px;
+}
+
+.xoj-page-card-drop-after {
+	border-bottom-color: @theme_selected_bg_color;
+	border-bottom-width: 3px;
+}
+
+/*
+ * The page toolbar holds two rows: the page actions and the density choice.
+ * They are rows rather than one line so the narrowest sidebar still fits every
+ * control at the 32x32 dense-layout size (.xoj-control-compact).
+ */
+#PreviewPagesToolbar {
+	padding: 0 2px;
+}
+
 #pdfFloatingToolGrid button:hover {
 	border-radius: 12px;
 	background: mix(@theme_bg_color, @theme_fg_color, 0.08);

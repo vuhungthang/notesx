@@ -17,6 +17,7 @@
 
 #include <gtk/gtk.h>  // for GtkWidget, GtkAllocation
 
+#include "gui/Builder.h"                      // for Builder
 #include "gui/sidebar/AbstractSidebarPage.h"  // for AbstractSidebarPage
 #include "model/DocumentChangeType.h"         // for DocumentChangeType
 #include "util/Util.h"
@@ -59,7 +60,7 @@ public:
     /**
      * Gets the zoom factor for the previews
      */
-    double getZoom() const;
+    virtual double getZoom() const;
 
     /**
      * Gets the PDF cache for preview rendering
@@ -81,11 +82,36 @@ protected:
     /// The width of the sidebar has changed
     void newWidth(double width);
 
+    /**
+     * Hand the scrolled area a container of its own.
+     *
+     * The base class builds a `GtkFixed` for the sidebars that lay their previews out by hand; a
+     * subclass that uses a container with its own layout (the page navigator uses a `GtkFlowBox`
+     * and a `GtkListBox`) calls this from its constructor to take over the ownership of the
+     * miniatures. The previous container is left to its own reference count.
+     */
+    void setMiniaturesWidget(GtkWidget* widget);
+
+public:
+    /// Detach `widget` from whatever container owns it, leaving the widget itself alive.
+    static void detachFromContainer(GtkWidget* widget);
+
+    /// The scrolled area the previews live in. The page navigator auto-scrolls it while dragging.
+    auto getScrollableWidget() const -> GtkWidget* { return this->scrollableBox.get(); }
+
 public:
     /**
      * Opens a context menu, at the current cursor position.
      */
     void openPreviewContextMenu(GdkEvent* currentEvent);
+
+protected:
+    /**
+     * The ui file the sidebar's context menu and toolbar come from.
+     *
+     * Derived classes add their own controls to that toolbar and look them up here by id.
+     */
+    std::unique_ptr<Builder> builder;
 
 private:
     /**
