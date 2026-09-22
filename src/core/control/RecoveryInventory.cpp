@@ -61,7 +61,10 @@ void sortCandidates(std::vector<RecoveryCandidate>& candidates) {
 
 }  // namespace
 
-auto RecoveryInventory::getAutosaveFolder() -> fs::path { return Util::getCacheSubfolder("autosaves"); }
+auto RecoveryInventory::getAutosaveFolder() -> fs::path {
+    // Read-only: looking for recovery copies must not create the folder it looks in.
+    return Util::getCacheSubfolder("autosaves", false);
+}
 
 auto RecoveryInventory::getOriginalFor(const fs::path& recoveryFile) -> fs::path {
     const std::string name = recoveryFile.filename().string();

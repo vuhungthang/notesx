@@ -147,7 +147,12 @@ auto system_single_byte_filename(const fs::path& path) -> std::string;
  */
 [[maybe_unused]] [[nodiscard]] fs::path getConfigFolder();
 [[maybe_unused]] [[nodiscard]] fs::path getConfigSubfolder(const fs::path& subfolder = "");
-[[maybe_unused]] [[nodiscard]] fs::path getCacheSubfolder(const fs::path& subfolder = "");
+/**
+ * Return the path of a subfolder of the cache folder. The folder is created on the way there,
+ * unless `createIfMissing` is false: a caller that only reads from the cache must not write to
+ * it, and creating the folder is a write.
+ */
+[[maybe_unused]] [[nodiscard]] fs::path getCacheSubfolder(const fs::path& subfolder = "", bool createIfMissing = true);
 [[maybe_unused]] [[nodiscard]] fs::path getDataSubfolder(const fs::path& subfolder = "");
 [[maybe_unused]] [[nodiscard]] fs::path getStateSubfolder(const fs::path& subfolder = "");
 [[maybe_unused]] [[nodiscard]] fs::path getConfigFile(const fs::path& relativeFileName = "");

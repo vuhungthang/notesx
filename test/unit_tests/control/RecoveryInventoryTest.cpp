@@ -294,6 +294,32 @@ TEST_F(RecoveryInventoryTest, testOnlyAutosaveNamesCountOutsideTheAutosaveFolder
  * Plan 004, step 4: scanning several folders never reports the same file twice, and the default
  * search folder is the one the autosave convention writes to.
  */
+/*
+ * Plan 004, step 4: the inventory is read-only.
+ *
+ * Looking for recovery copies must not write anything, and neither must looking in a folder that
+ * is not there: the autosave folder does not exist until the first autosave, and asking where it
+ * would be is not a reason to create it.
+ */
+TEST(RecoveryInventoryReadOnlyTest, testLookingForRecoveryCopiesWritesNothing) {
+    const fs::path root = fs::temp_directory_path() / "xournalpp-test-read-only-scan";
+    fs::remove_all(root);
+    const fs::path folder = root / "not-there";
+
+    EXPECT_EQ(RecoveryInventory::getAutosaveFolder().filename(), "autosaves")
+            << "the folder recovery copies are searched in is the one the convention names";
+
+    const auto candidates = RecoveryInventory::scanFolder(folder);
+    EXPECT_TRUE(candidates.empty());
+    EXPECT_FALSE(fs::exists(root)) << "looking in a folder that is not there is not creating it";
+
+    const auto scanned = RecoveryInventory::scan({folder});
+    EXPECT_TRUE(scanned.empty());
+    EXPECT_FALSE(fs::exists(root));
+
+    fs::remove_all(root);
+}
+
 TEST_F(RecoveryInventoryTest, testScanningSeveralFoldersDeduplicates) {
     const fs::path recovery = this->writeRecovery(this->root / ".notes.autosave.xopp");
 

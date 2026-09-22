@@ -338,12 +338,12 @@ auto Util::getConfigSubfolder(const fs::path& subfolder) -> fs::path {
     return Util::ensureFolderExists(p);
 }
 
-auto Util::getCacheSubfolder(const fs::path& subfolder) -> fs::path {
+auto Util::getCacheSubfolder(const fs::path& subfolder, bool createIfMissing) -> fs::path {
     auto p = GFilename(g_get_user_cache_dir()).toPath().value_or(fs::path());
     p /= CONFIG_FOLDER_NAME;
     p /= subfolder;
 
-    return Util::ensureFolderExists(p);
+    return createIfMissing ? Util::ensureFolderExists(p) : p;
 }
 
 auto Util::getDataSubfolder(const fs::path& subfolder) -> fs::path {
