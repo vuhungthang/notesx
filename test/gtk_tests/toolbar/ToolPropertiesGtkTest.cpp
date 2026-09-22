@@ -151,6 +151,13 @@ auto childCount(GtkWidget* container) -> std::size_t {
     return count;
 }
 
+/// The size `widget` asks for. A widget that was never shown asks for nothing at all.
+auto preferredSize(GtkWidget* widget) -> GtkRequisition {
+    GtkRequisition preferred{};
+    gtk_widget_get_preferred_size(widget, nullptr, &preferred);
+    return preferred;
+}
+
 /// Every button at or below `container`, in tree order.
 auto buttonsOf(GtkWidget* container) -> std::vector<GtkWidget*> {
     std::vector<GtkWidget*> buttons;
@@ -201,14 +208,38 @@ auto enumTargetOf(GtkRadioButton* button) -> guint64 {
     return target == nullptr ? 0U : g_variant_get_uint64(target);
 }
 
-/// Whether any control below `root` is bound to `actionName` through its action-name property.
-auto hasControlForAction(GtkWidget* root, const std::string& actionName) -> bool {
+/// The first control below `root` that is bound to `actionName` through its action-name property.
+auto controlForAction(GtkWidget* root, const std::string& actionName) -> GtkWidget* {
     for (GtkWidget* widget: allWidgets(root)) {
         if (!GTK_IS_ACTIONABLE(widget)) {
             continue;
         }
         const char* name = gtk_actionable_get_action_name(GTK_ACTIONABLE(widget));
         if (name != nullptr && actionName == name) {
+            return widget;
+        }
+    }
+    return nullptr;
+}
+
+/// Whether any control below `root` is bound to `actionName` through its action-name property.
+auto hasControlForAction(GtkWidget* root, const std::string& actionName) -> bool {
+    return controlForAction(root, actionName) != nullptr;
+}
+
+/**
+ * Whether `widget` and every ancestor of it up to `root` is visible.
+ *
+ * Unlike gtk_widget_is_visible(), the walk stops at `root`, so the popover that carries the panel -
+ * which is itself invisible until it is popped up - does not decide the answer for the panel's own
+ * rows. That is what lets this say whether the panel shows a control, before anything is popped up.
+ */
+auto isShownWithin(GtkWidget* root, GtkWidget* widget) -> bool {
+    for (GtkWidget* current = widget; current != nullptr; current = gtk_widget_get_parent(current)) {
+        if (!gtk_widget_get_visible(current)) {
+            return false;
+        }
+        if (current == root) {
             return true;
         }
     }
@@ -432,6 +463,16 @@ class ToolPropertyPanelStructureTest: public GtkTest {
         ASSERT_NE(content, nullptr);
         EXPECT_TRUE(hasCssClass(content, "xoj-tool-properties"));
 
+        /*
+         * The factory shows the panel it hands the popover. The toolbar's own show_all() never
+         * reaches a popover - GTK hands it to the window rather than adding it to the tree of the
+         * widget it is anchored to - and a GTK3 widget that was never shown asks for no size, which
+         * is what makes the popover lay out an empty box and GTK assert while drawing its frame.
+         */
+        EXPECT_TRUE(gtk_widget_get_visible(content)) << "the factory shows the panel it puts in the popover";
+        EXPECT_GT(preferredSize(content).width, 150) << "an unshown panel has no size for the popover to frame";
+        EXPECT_GT(preferredSize(content).height, 200) << "the panel's rows are part of the popover's size";
+
         // The panel is owned by the popover that owns its widgets.
         EXPECT_NE(g_object_get_data(G_OBJECT(popover), "xoj-tool-property-panel"), nullptr);
 
@@ -502,19 +543,48 @@ class ToolPropertyPanelStructureTest: public GtkTest {
         EXPECT_TRUE(hasControlForAction(content, actionNameOf(Action::TOOL_FILL)));
         EXPECT_TRUE(hasControlForAction(content, actionNameOf(Action::TOOL_FILL_OPACITY)));
 
-        // The eraser panel offers its own mode and none of the pen's fields.
+        // The pen has a colour and a fill, so their rows are on screen inside the shown panel.
+        for (Action action: {Action::SELECT_COLOR, Action::TOOL_FILL, Action::TOOL_FILL_OPACITY}) {
+            GtkWidget* control = controlForAction(content, actionNameOf(action));
+            ASSERT_NE(control, nullptr) << Action_toString(action) << " is not offered by the pen panel";
+            EXPECT_TRUE(isShownWithin(content, control))
+                    << Action_toString(action) << " is part of the pen's properties and has to be on screen";
+        }
+
+        // The eraser panel offers its own mode and none of the pen's fields. It is built with the
+        // eraser in hand, the way the gate builds it: that is when its rows are decided.
+        fixture.adapter.selectTool(TOOL_ERASER);
         ToolPropertyPopoverFactory eraserFactory{fixture.adapter, settings, *registry.find(TOOL_ERASER),
                                                  GTK_WINDOW(window), &presetsListener};
         GtkWidget* eraserPopover = eraserFactory.createPopover();
         ASSERT_NE(eraserPopover, nullptr);
         GtkWidget* eraserContent = gtk_bin_get_child(GTK_BIN(eraserPopover));
         ASSERT_NE(eraserContent, nullptr);
+        EXPECT_TRUE(gtk_widget_get_visible(eraserContent)) << "the factory shows this panel too";
         ASSERT_EQ(labelledRows(eraserContent, ERASER_TYPE_LABELS).size(), 3U);
         ASSERT_EQ(labelledRows(eraserContent, WIDTH_LABELS).size(), 5U);
         EXPECT_EQ(radioButtonNamed(eraserContent, "dashed"), nullptr)
                 << "an eraser panel must not offer the pen's line styles";
         EXPECT_EQ(radioButtonNamed(eraserContent, "Draw Line"), nullptr)
                 << "an eraser panel must not offer a drawing type";
+
+        /*
+         * An eraser has a width and nothing else, so the panel hides its colour and fill rows. They
+         * are built all the same, which is why this is about being on screen rather than about
+         * existing: showing the content (gtk_widget_show_all, see the factory) is recursive and
+         * would bring them back if the panel's own rule were not applied after it.
+         */
+        GtkRadioButton* eraserWidthRow = radioButtonNamed(eraserContent, "Medium");
+        ASSERT_NE(eraserWidthRow, nullptr) << "an eraser has a width";
+        EXPECT_TRUE(isShownWithin(eraserContent, GTK_WIDGET(eraserWidthRow)))
+                << "the width that is part of an eraser's properties is on screen";
+
+        for (Action action: {Action::SELECT_COLOR, Action::TOOL_FILL, Action::TOOL_FILL_OPACITY}) {
+            GtkWidget* control = controlForAction(eraserContent, actionNameOf(action));
+            ASSERT_NE(control, nullptr) << Action_toString(action) << " is missing from the eraser panel";
+            EXPECT_FALSE(isShownWithin(eraserContent, control))
+                    << Action_toString(action) << " is not part of an eraser's properties and must stay hidden";
+        }
 
         // The highlighter has a drawing type and no eraser mode.
         ToolPropertyPopoverFactory highlighterFactory{fixture.adapter, settings, *registry.find(TOOL_HIGHLIGHTER),
@@ -745,6 +815,36 @@ class ActiveToolPopoverGateTest: public GtkTest {
         settle();
         EXPECT_TRUE(gtk_widget_get_visible(GTK_WIDGET(popover)))
                 << "clicking the active tool opens its property popover";
+
+        /*
+         * The popover is only a frame: what a user reads is its child, and a popover is not a
+         * descendant of the toolbar that anchors it, so the toolbar's gtk_widget_show_all() never
+         * reaches that child. Left unshown, a GTK3 widget has no size, the popover lays out an
+         * empty box and GTK asserts while drawing the frame around it
+         * (gtk_render_frame_gap: 'xy0_gap >= 0' failed). Both facts are asserted here, because the
+         * popover being open says nothing about its content being there.
+         *
+         * A CriticalWatch is deliberately not used to catch that assertion from a run without
+         * G_DEBUG=fatal-criticals: the test application can be activated more than once while other
+         * instances of it run, and the handler chain two watches leave behind then logs without data
+         * and crashes. The size and visibility below fail either way.
+         */
+        GtkWidget* popoverContent = gtk_bin_get_child(GTK_BIN(popover));
+        ASSERT_NE(popoverContent, nullptr);
+        EXPECT_TRUE(gtk_widget_get_visible(popoverContent))
+                << "the popover's content is shown: the toolbar it is anchored to never shows it";
+        EXPECT_GT(preferredSize(popoverContent).width, 150)
+                << "an unshown content gives the popover nothing to frame but an empty box";
+        EXPECT_GT(preferredSize(popoverContent).height, 200)
+                << "the panel's rows have to be part of the popover's size, not collapsed away";
+
+        // And the content really is the panel, with its controls shown rather than merely built.
+        const std::vector<GtkWidget*> shownControls = buttonsOf(popoverContent);
+        ASSERT_FALSE(shownControls.empty()) << "the popover carries the panel's controls";
+        for (GtkWidget* widget: shownControls) {
+            EXPECT_TRUE(gtk_widget_is_visible(widget))
+                    << "a control of an open popover must be on screen, not just allocated: " << accessibleName(widget);
+        }
 
         // Escape, a click outside and the focus return are GTK's, and all three need the popover to
         // be anchored to the tool's own control and to be modal.
