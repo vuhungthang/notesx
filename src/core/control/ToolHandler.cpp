@@ -25,6 +25,78 @@ class LineStyle;
 
 ToolListener::~ToolListener() = default;
 
+ToolConfigListener::~ToolConfigListener() = default;
+
+ToolHandler::CoalescedUpdate::CoalescedUpdate(ToolHandler& handler): handler(handler) { this->handler.coalesceDepth++; }
+
+ToolHandler::CoalescedUpdate::~CoalescedUpdate() {
+    if (--this->handler.coalesceDepth > 0) {
+        return;
+    }
+
+    const unsigned int pending = this->handler.pendingNotifications;
+    this->handler.pendingNotifications = 0;
+    this->handler.deliver(pending);
+}
+
+void ToolHandler::emit(Notification notification) const {
+    if (this->coalesceDepth > 0) {
+        this->pendingNotifications |= static_cast<unsigned int>(notification);
+        return;
+    }
+    this->deliver(static_cast<unsigned int>(notification));
+}
+
+void ToolHandler::deliver(unsigned int notifications) const {
+    if (notifications == 0) {
+        return;
+    }
+
+    // The individual parts are reported first: Control::toolChanged() re-syncs everything
+    // derived from the tool (size, fill, colour, drawing type) and therefore has to see the
+    // final values. Reporting a part that the tool change already covers is harmless, so no
+    // attempt is made to remove it from the set.
+    if (notifications & NOTIFY_COLOR) {
+        this->stateChangeListener->toolColorChanged();
+    }
+    if (notifications & NOTIFY_SIZE) {
+        this->stateChangeListener->toolSizeChanged();
+    }
+    if (notifications & NOTIFY_FILL) {
+        this->stateChangeListener->toolFillChanged();
+    }
+    if (notifications & NOTIFY_LINE_STYLE) {
+        this->stateChangeListener->toolLineStyleChanged();
+    }
+    if (notifications & NOTIFY_TOOL) {
+        this->stateChangeListener->toolChanged();
+    }
+
+    // Every observer sees the same, already applied configuration, so a UI representation
+    // never has to read the intermediate state of a multi-part change.
+    for (ToolConfigListener* listener: this->toolConfigListeners) {
+        listener->toolConfigChanged();
+    }
+}
+
+void ToolHandler::emitToolChanged() const { this->emit(NOTIFY_TOOL); }
+
+void ToolHandler::emitToolColorChanged() const { this->emit(NOTIFY_COLOR); }
+
+void ToolHandler::emitToolSizeChanged() const { this->emit(NOTIFY_SIZE); }
+
+void ToolHandler::emitToolFillChanged() const { this->emit(NOTIFY_FILL); }
+
+void ToolHandler::emitToolLineStyleChanged() const { this->emit(NOTIFY_LINE_STYLE); }
+
+void ToolHandler::addToolConfigListener(ToolConfigListener* listener) {
+    this->toolConfigListeners.emplace_back(listener);
+}
+
+void ToolHandler::removeToolConfigListener(ToolConfigListener* listener) {
+    std::erase(this->toolConfigListeners, listener);
+}
+
 ToolHandler::ToolHandler(ToolListener* stateChangeListener, ActionDatabase* actionDB, Settings* settings):
         stateChangeListener(stateChangeListener), actionDB(actionDB), settings(settings) {
     initTools();
@@ -34,7 +106,7 @@ class ToolSelectPDFText: public Tool {
 public:
     ToolSelectPDFText(std::string name, ToolType type, Color color): Tool(name, type, color, std::nullopt) {}
 
-    ~ToolSelectPDFText() override{};
+    ~ToolSelectPDFText() override {};
 
     void setColor(Color color) override {
         if (color.alpha == 0) {
@@ -167,6 +239,10 @@ void ToolHandler::setButtonEraserType(EraserType eraserType, Button button) {
 }
 
 void ToolHandler::eraserTypeChanged() {
+    // The config listeners hear about the change whether or not there is an action database to
+    // update: a representation that is not action bound has to refresh too.
+    this->emit(NOTIFY_ERASER_TYPE);
+
     if (this->actionDB == nullptr) {
         return;
     }
@@ -195,9 +271,11 @@ void ToolHandler::selectTool(ToolType type) {
 }
 
 void ToolHandler::fireToolChanged() const {
-    for (auto&& listener: this->toolChangeListeners) { listener(this->activeTool->type); }
+    for (auto&& listener: this->toolChangeListeners) {
+        listener(this->activeTool->type);
+    }
 
-    stateChangeListener->toolChanged();
+    this->emitToolChanged();
 }
 
 void ToolHandler::addToolChangedListener(ToolChangedCallback listener) {
@@ -206,7 +284,7 @@ void ToolHandler::addToolChangedListener(ToolChangedCallback listener) {
 
 auto ToolHandler::getTool(ToolType type) const -> Tool& { return *(this->tools[type - TOOL_PEN]); }
 
-auto ToolHandler::getActiveTool() const -> Tool* {return this->activeTool; }
+auto ToolHandler::getActiveTool() const -> Tool* { return this->activeTool; }
 
 auto ToolHandler::getToolType() const -> ToolType {
     Tool* tool = this->activeTool;
@@ -238,7 +316,7 @@ void ToolHandler::setPenSize(ToolSize size) {
     this->tools[TOOL_PEN - TOOL_PEN]->setSize(size);
 
     if (this->activeTool->type == TOOL_PEN) {
-        this->stateChangeListener->toolSizeChanged();
+        this->emitToolSizeChanged();
     }
 }
 
@@ -246,7 +324,7 @@ void ToolHandler::setEraserSize(ToolSize size) {
     this->tools[TOOL_ERASER - TOOL_PEN]->setSize(size);
 
     if (this->activeTool->type == TOOL_ERASER) {
-        this->stateChangeListener->toolSizeChanged();
+        this->emitToolSizeChanged();
     }
 }
 
@@ -254,7 +332,7 @@ void ToolHandler::setHighlighterSize(ToolSize size) {
     this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->setSize(size);
 
     if (this->activeTool->type == TOOL_HIGHLIGHTER) {
-        this->stateChangeListener->toolSizeChanged();
+        this->emitToolSizeChanged();
     }
 }
 
@@ -262,7 +340,7 @@ void ToolHandler::setPenFillEnabled(bool fill) {
     this->tools[TOOL_PEN - TOOL_PEN]->setFill(fill);
 
     if (this->activeTool->type == TOOL_PEN) {
-        this->stateChangeListener->toolFillChanged();
+        this->emitToolFillChanged();
     }
 }
 
@@ -276,7 +354,7 @@ void ToolHandler::setHighlighterFillEnabled(bool fill) {
     this->tools[TOOL_HIGHLIGHTER - TOOL_PEN]->setFill(fill);
 
     if (this->activeTool->type == TOOL_HIGHLIGHTER) {
-        this->stateChangeListener->toolFillChanged();
+        this->emitToolFillChanged();
     }
 }
 
@@ -335,7 +413,7 @@ void ToolHandler::setSize(ToolSize size) {
 
     Tool* tool = this->toolbarSelectedTool;
     tool->setSize(clippedSize);
-    this->stateChangeListener->toolSizeChanged();
+    this->emitToolSizeChanged();
 }
 
 void ToolHandler::setButtonSize(ToolSize size, Button button) {
@@ -351,7 +429,7 @@ void ToolHandler::setButtonSize(ToolSize size, Button button) {
 void ToolHandler::setLineStyle(const LineStyle& style) {
     Tool* tool = this->toolbarSelectedTool;
     tool->setLineStyle(style);
-    this->stateChangeListener->toolLineStyleChanged();
+    this->emitToolLineStyleChanged();
 }
 
 void ToolHandler::setColor(Color color, bool userSelection) {
@@ -361,7 +439,7 @@ void ToolHandler::setColor(Color color, bool userSelection) {
     Tool* tool = this->activeTool;
     int currentAlpha = tool->getColor().alpha;
     tool->setColor(color);
-    this->stateChangeListener->toolColorChanged();
+    this->emitToolColorChanged();
     if (userSelection) {
         // ensure that tool color alpha is re-applied on new selected color;
         setColorAlpha(*tool, currentAlpha);
@@ -386,7 +464,7 @@ auto ToolHandler::getColorMaskAlpha() const -> Color {
 void ToolHandler::setFillEnabled(bool fill) {
     Tool* tool = this->toolbarSelectedTool;
     tool->setFill(fill);
-    this->stateChangeListener->toolFillChanged();
+    this->emitToolFillChanged();
 }
 
 auto ToolHandler::getFill() const -> int {
@@ -634,12 +712,13 @@ void ToolHandler::setSelectionEditTools(bool setColor, bool setSize, bool setFil
     }
 
     if (this->activeTool->type == TOOL_SELECT_RECT || this->activeTool->type == TOOL_SELECT_REGION ||
-        this->activeTool->type == TOOL_SELECT_MULTILAYER_RECT || this->activeTool->type == TOOL_SELECT_MULTILAYER_REGION ||
-        this->activeTool->type == TOOL_SELECT_OBJECT || this->activeTool->type == TOOL_PLAY_OBJECT) {
-        this->stateChangeListener->toolColorChanged();
-        this->stateChangeListener->toolSizeChanged();
-        this->stateChangeListener->toolFillChanged();
-        this->stateChangeListener->toolLineStyleChanged();
+        this->activeTool->type == TOOL_SELECT_MULTILAYER_RECT ||
+        this->activeTool->type == TOOL_SELECT_MULTILAYER_REGION || this->activeTool->type == TOOL_SELECT_OBJECT ||
+        this->activeTool->type == TOOL_PLAY_OBJECT) {
+        this->emitToolColorChanged();
+        this->emitToolSizeChanged();
+        this->emitToolFillChanged();
+        this->emitToolLineStyleChanged();
         this->fireToolChanged();
     }
 }

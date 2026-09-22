@@ -60,9 +60,51 @@ public:
     virtual ~ToolListener();
 };
 
+/**
+ * Plan 003: a listener for the *effective tool configuration*.
+ *
+ * ToolHandler has exactly one ToolListener, which Control owns. Observers that only mirror
+ * the configuration - the contextual property popovers and the active tool summary - cannot
+ * use that slot without displacing Control, so they register here instead.
+ *
+ * A listener is notified once per change, after the change has been applied, and never while
+ * the notification is being delivered to another listener.
+ */
+class ToolConfigListener {
+public:
+    virtual void toolConfigChanged() = 0;
+    virtual ~ToolConfigListener();
+};
+
 class ToolHandler {
 public:
     using ToolChangedCallback = std::function<void(ToolType)>;
+
+    /**
+     * Plan 003: coalesce the state change notifications emitted while this object is alive.
+     *
+     * Applying a preset changes several parts of the tool configuration at once. Without
+     * coalescing, every part would notify on its own, so the UI would briefly show a mixture
+     * of the old and the new configuration and would be rebuilt several times. While a guard
+     * is alive the notification methods only record what changed; when the outermost guard
+     * goes out of scope the recorded notifications are delivered once each.
+     *
+     * Guards nest, and only the outermost one delivers.
+     */
+    class CoalescedUpdate {
+    public:
+        explicit CoalescedUpdate(ToolHandler& handler);
+        ~CoalescedUpdate();
+
+        CoalescedUpdate(const CoalescedUpdate&) = delete;
+        CoalescedUpdate& operator=(const CoalescedUpdate&) = delete;
+        CoalescedUpdate(CoalescedUpdate&&) = delete;
+        CoalescedUpdate& operator=(CoalescedUpdate&&) = delete;
+
+    private:
+        ToolHandler& handler;
+    };
+
     ToolHandler(ToolListener* stateChangedListener, ActionDatabase* actionDB, Settings* settings);
     virtual ~ToolHandler();
 
@@ -260,6 +302,15 @@ public:
     void addToolChangedListener(ToolChangedCallback listener);
 
     /**
+     * @brief Listen for changes of the effective tool configuration (Plan 003).
+     *
+     * @param listener Listener to notify. It must outlive the registration; a listener must
+     *                 not add or remove listeners from inside its callback.
+     */
+    void addToolConfigListener(ToolConfigListener* listener);
+    void removeToolConfigListener(ToolConfigListener* listener);
+
+    /**
      * @brief Get the Tool of a certain type
      *
      * @param type
@@ -393,6 +444,35 @@ private:
     std::array<std::unique_ptr<Tool>, TOOL_COUNT> tools;
 
     /**
+     * @brief The parts of the tool configuration a change can be reported for (Plan 003).
+     *
+     * Kept as a bit set so a coalesced update can report each changed part exactly once.
+     */
+    enum Notification : unsigned int {
+        NOTIFY_TOOL = 1U << 0,
+        NOTIFY_COLOR = 1U << 1,
+        NOTIFY_SIZE = 1U << 2,
+        NOTIFY_FILL = 1U << 3,
+        NOTIFY_LINE_STYLE = 1U << 4,
+        /// The eraser mode changed; it is carried by an action state rather than by the tool
+        /// configuration, so nothing has to be re-synced on the ToolListener side.
+        NOTIFY_ERASER_TYPE = 1U << 5,
+    };
+
+    /**
+     * @brief Report a change, or record it while a CoalescedUpdate is alive.
+     */
+    void emit(Notification notification) const;
+    /// Report the recorded changes to the ToolListener and to the config listeners.
+    void deliver(unsigned int notifications) const;
+
+    void emitToolChanged() const;
+    void emitToolColorChanged() const;
+    void emitToolSizeChanged() const;
+    void emitToolFillChanged() const;
+    void emitToolLineStyleChanged() const;
+
+    /**
      * @brief Get the Button Tool pointer based on enum
      *
      * @param button
@@ -426,6 +506,15 @@ private:
     std::unique_ptr<Tool> touchDrawingButtonTool;
 
     std::vector<ToolChangedCallback> toolChangeListeners;
+
+    /// Observers of the effective tool configuration (Plan 003). Not owned.
+    std::vector<ToolConfigListener*> toolConfigListeners;
+
+    /// Nesting depth of the active CoalescedUpdate guards. Notification batching state: it
+    /// describes how a change is reported, not what the configuration is.
+    mutable unsigned int coalesceDepth = 0;
+    /// Notifications recorded while coalesceDepth > 0, as a Notification bit set.
+    mutable unsigned int pendingNotifications = 0;
 
     ToolListener* stateChangeListener = nullptr;
     ActionDatabase* actionDB = nullptr;
