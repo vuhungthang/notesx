@@ -83,12 +83,18 @@
  * underline indicator that stays visible when a theme draws no border.
  * The checked selectors are grouped here so every selected tool - main
  * toolbar, popover toolbar and floating toolbox - shares one state model.
+ * The forced-dark floating-toolbox selectors are listed as well: their surface
+ * rule (section 2) carries two type selectors and would otherwise win the
+ * cascade against the plain floating-toolbox selectors and leave the selected
+ * tool with the indicator alone.
  */
 .xoj-tool-active,
 toolbar button:checked,
 popover.toolbar button:checked,
 #floatingToolbox button:checked,
-#pdfFloatingToolGrid button:checked {
+#pdfFloatingToolGrid button:checked,
+window.darkMode #floatingToolbox button:checked,
+window.darkMode #pdfFloatingToolGrid button:checked {
 	background-color: alpha(@theme_selected_bg_color, 0.35);
 	border-color: @theme_selected_bg_color;
 
@@ -189,6 +195,24 @@ toolbar.editing {
 	 */
 
 	box-shadow: none;
+}
+
+/*
+ * Forced-dark floating toolbox surface. .darkMode means the dark theme is in
+ * effect (MainWindow::updateColorscheme() also flips
+ * gtk-application-prefer-dark-theme), so the theme colours below resolve dark:
+ * the panel takes the theme's base surface and a foreground-coloured shadow, so
+ * it stays readable against the dark page. This is the semantic equivalent of
+ * the fixed surface and grey shadow the pre-semantic sheet hard-coded here.
+ *
+ * The selected state of these buttons comes from the grouped rule in section 1,
+ * which repeats the two selectors below; that rule has to outrank this one.
+ */
+window.darkMode #floatingToolbox > box,
+window.darkMode #pdfFloatingToolGrid {
+	background-color: @theme_base_color;
+
+	box-shadow: 0 0 5px alpha(@theme_fg_color, 0.4);
 }
 
 window.darkMode #floatingToolbox button,

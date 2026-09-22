@@ -253,3 +253,11 @@ Toolbar buttons are part of the keyboard focus chain: `ToolButton::createItem()`
 `gtk_widget_set_can_focus(btn, FALSE)`, and adds `.xoj-control` plus `.xoj-focus-ring`, an
 accessible name derived from the tool's display name, and a tooltip. The menu-button item stays
 non-focusable so that Tab does not stop twice on one control.
+
+Pointer activation deliberately leaves the focus where it is: `gtk_widget_set_focus_on_click(btn,
+FALSE)` keeps a mouse click on a tool from pulling the focus out of the canvas, without changing
+`can-focus`, so Tab plus Space/Enter still reach and activate the same button.
+
+Dark-mode selected state: the forced-dark floating-toolbox surface rules carry two type selectors,
+so the grouped `.xoj-tool-active` rule lists those selectors too. Keep the two in step when either
+rule changes - dropping the dark selectors silently reduces the selected tool to one cue.

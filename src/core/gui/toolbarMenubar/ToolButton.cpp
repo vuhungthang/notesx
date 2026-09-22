@@ -37,6 +37,12 @@ auto ToolButton::createItem(bool horizontal) -> xoj::util::WidgetSPtr {
     // defined in ui/xournalpp.css and documented in ui/README.md.
     gtk_widget_add_css_class(btn, "xoj-control");
     gtk_widget_add_css_class(btn, "xoj-focus-ring");
+    // ... but a pointer click must not move the focus off the page. can-focus stays
+    // true, so Tab and Space/Enter still reach the button; only the focus grab that
+    // GtkButton performs on button press is suppressed, and the click still activates
+    // the action. Without this, picking a tool with the mouse would leave the toolbar
+    // focused and swallow the next drawing keystroke.
+    gtk_widget_set_focus_on_click(btn, false);
     gtk_widget_set_tooltip_text(btn, getToolDisplayName().c_str());
     // Icon-only buttons have no label, so expose the display name to ATK too.
     atk_object_set_name(gtk_widget_get_accessible(btn), getToolDisplayName().c_str());
