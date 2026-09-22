@@ -44,10 +44,16 @@ void SaveJob::afterRun() {
         XojMsgBox::showErrorToUser(control->getGtkWindow(), this->lastError);
         callback(false);
     } else {
-        // Only ever on a write that really happened: afterRun() follows run(), and run() leaves
-        // lastError empty only when the file was written.
+        /*
+         * Plan 004: the position the file's contents were snapshotted at is committed only now,
+         * once the write has really happened. Reading the top of the undo history here instead
+         * would record an edit that arrived while the file was being serialized, which the file
+         * does not contain: `isChanged()` would then answer false, and closing the editor would
+         * not ask to save that edit. A failed write commits nothing, because `afterRun()` takes
+         * the other branch.
+         */
         this->control->getSafetyState()->saveSucceeded(this->savedFilepath);
-        this->control->resetSavedStatus();
+        this->control->resetSavedStatus(this->savedPosition);
         callback(true);
     }
 }
@@ -116,6 +122,20 @@ auto SaveJob::save() -> bool {
     fs::path target = doc->getFilepath();
     Util::safeReplaceExtension(target, "xopp");
 
+    /*
+     * Plan 004: the undo position is captured here, where the contents it describes are about to
+     * be read, rather than where the write ends. `prepareSave()` reads the document, and an edit
+     * can reach it once the lock below is released: committing the position the write ends at
+     * would claim such an edit is in the file when it is not, and closing the editor would then
+     * not ask to save it.
+     *
+     * The capture is taken under the same shared document lock as the snapshot, the discipline the
+     * recovery path uses. The token is an identity that is never dereferenced - it names an action
+     * the undo history owns - and nothing can release that action while this blocking job is in
+     * flight, because `Control::block()` keeps the actions that close or replace the document
+     * disabled until `afterRun()` has run.
+     */
+    this->savedPosition = this->control->getUndoRedoHandler()->captureSavePosition();
     h.prepareSave(doc, target);
     doc->unlock_shared();
 

@@ -135,8 +135,19 @@ public:
 
     /**
      * Marks the current document as saved if it is currently marked as unsaved.
+     *
+     * For a document that was just loaded or reset, whose contents are the ones the file holds.
      */
     void resetSavedStatus();
+
+    /**
+     * Marks `position` as what the file that was just written contains.
+     *
+     * The save path uses this one: the position is the one `UndoRedoHandler::captureSavePosition()`
+     * took where the file's contents were snapshotted, so an edit that arrived while the file was
+     * being written stays unsaved and closing the editor still asks to save it.
+     */
+    void resetSavedStatus(UndoRedoHandler::SavePosition position);
 
     /**
      * Close the current document, prompting to save unsaved changes.

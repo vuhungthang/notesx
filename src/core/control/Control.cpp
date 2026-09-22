@@ -2220,12 +2220,14 @@ void Control::saveImpl(bool saveAs, std::function<void(bool)> callback) {
     }
 }
 
-void Control::resetSavedStatus() {
+void Control::resetSavedStatus() { this->resetSavedStatus(this->undoRedo->captureSavePosition()); }
+
+void Control::resetSavedStatus(UndoRedoHandler::SavePosition position) {
     this->doc->lock_shared();
     auto filepath = this->doc->getFilepath();
     this->doc->unlock_shared();
 
-    this->undoRedo->documentSaved();
+    this->undoRedo->documentSaved(position);
     RecentManager::addRecentFileFilename(filepath);
     this->updateWindowTitle();
 }

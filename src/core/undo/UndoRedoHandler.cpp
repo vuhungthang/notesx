@@ -226,6 +226,12 @@ auto UndoRedoHandler::captureAutosavePosition() const -> AutosavePosition {
 
 void UndoRedoHandler::documentAutosaved(AutosavePosition position) { this->autosavedUndo = position.top; }
 
+auto UndoRedoHandler::captureSavePosition() const -> SavePosition {
+    return SavePosition{this->undoList.empty() ? nullptr : this->undoList.back().get()};
+}
+
+void UndoRedoHandler::documentSaved(SavePosition position) { this->savedUndo = position.top; }
+
 void UndoRedoHandler::documentSaved() {
     this->savedUndo = this->undoList.empty() ? nullptr : this->undoList.back().get();
 }
