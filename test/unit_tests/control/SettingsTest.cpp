@@ -358,4 +358,3 @@ TEST(SettingsTest, testUnknownWorkspaceModeFallsBackToClassic) {
 
     fs::remove_all(dir);
 }
-
