@@ -1370,6 +1370,7 @@ void Control::showSettings() {
         SidebarNumberingStyle sidebarStyle;
         std::optional<std::filesystem::path> colorPaletteSetting;
         RecolorParameters recolorParameters;
+        WorkspaceMode workspaceMode;
     } settingsBeforeDialog = {
             settings->getBorderColor(),
             settings->getAddVerticalSpace(),
@@ -1384,6 +1385,7 @@ void Control::showSettings() {
             settings->getSidebarNumberingStyle(),
             settings->getColorPaletteSetting(),
             settings->getRecolorParameters(),
+            settings->getWorkspaceMode(),
     };
 
     auto dlg = xoj::popup::PopupWindowWrapper<SettingsDialog>(
@@ -1464,6 +1466,12 @@ void Control::showSettings() {
 
                 if (reloadToolbars) {
                     ctrl->getWindow()->reloadToolbars();
+                }
+
+                // Plan 002: applying the workspace selection switches the toolbar and the
+                // menubar as well, so it goes through the workspace code path.
+                if (settingsBeforeDialog.workspaceMode != settings->getWorkspaceMode()) {
+                    win->applyWorkspaceChrome();
                 }
 
                 ctrl->getSidebar()->saveSize();

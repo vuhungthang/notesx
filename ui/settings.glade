@@ -2930,6 +2930,86 @@ This setting can make it easier to draw with touch.</property>
                             <property name="can-focus">False</property>
                             <property name="orientation">vertical</property>
                             <child>
+                              <object class="GtkFrame" id="frameWorkspace">
+                                <property name="name">frameWorkspace</property>
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="label-xalign">0.009999999776482582</property>
+                                <child>
+                                  <object class="GtkBox" id="boxWorkspace">
+                                    <property name="name">boxWorkspace</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <property name="margin-bottom">12</property>
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">4</property>
+                                    <child>
+                                      <object class="GtkRadioButton" id="rdWorkspaceFocus">
+                                        <property name="label" translatable="yes">Focus: fewer controls, properties in compact menus</property>
+                                        <property name="name">rdWorkspaceFocus</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">True</property>
+                                        <property name="receives-default">False</property>
+                                        <property name="draw-indicator">True</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">0</property>
+                                      </packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkRadioButton" id="rdWorkspaceClassic">
+                                        <property name="label" translatable="yes">Classic: all existing configurable toolbars</property>
+                                        <property name="name">rdWorkspaceClassic</property>
+                                        <property name="group">rdWorkspaceFocus</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">True</property>
+                                        <property name="receives-default">False</property>
+                                        <property name="draw-indicator">True</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">1</property>
+                                      </packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="labelWorkspaceHint">
+                                        <property name="name">labelWorkspaceHint</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">False</property>
+                                        <property name="margin-top">6</property>
+                                        <property name="label" translatable="yes">&lt;i&gt;Switching is immediate. Each workspace keeps its own toolbar and menubar preference.&lt;/i&gt;</property>
+                                        <property name="use-markup">True</property>
+                                        <property name="xalign">0</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">2</property>
+                                      </packing>
+                                    </child>
+                                  </object>
+                                </child>
+                                <child type="label">
+                                  <object class="GtkLabel" id="labelWorkspace">
+                                    <property name="name">labelWorkspace</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="label" translatable="yes">Workspace</property>
+                                  </object>
+                                </child>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">True</property>
+                                <property name="position">0</property>
+                              </packing>
+                            </child>
+                            <child>
                               <object class="GtkFrame" id="sid98">
                                 <property name="visible">True</property>
                                 <property name="can-focus">False</property>
@@ -3315,7 +3395,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">0</property>
+                                <property name="position">1</property>
                               </packing>
                             </child>
                             <child>
@@ -3434,7 +3514,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">1</property>
+                                <property name="position">2</property>
                               </packing>
                             </child>
                             <child>
@@ -3721,7 +3801,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">2</property>
+                                <property name="position">3</property>
                               </packing>
                             </child>
                             <child>
@@ -3780,7 +3860,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">3</property>
+                                <property name="position">4</property>
                               </packing>
                             </child>
                             <child>
@@ -3844,7 +3924,7 @@ This setting can make it easier to draw with touch.</property>
                                 <property name="expand">True</property>
                                 <property name="fill">True</property>
                                 <property name="padding">3</property>
-                                <property name="position">4</property>
+                                <property name="position">5</property>
                               </packing>
                             </child>
                             <child>
@@ -3917,7 +3997,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">5</property>
+                                <property name="position">6</property>
                               </packing>
                             </child>
                             <child>
@@ -3999,7 +4079,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">6</property>
+                                <property name="position">7</property>
                               </packing>
                             </child>
                             <child>
@@ -4073,7 +4153,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">7</property>
+                                <property name="position">8</property>
                               </packing>
                             </child>
                             <child>
@@ -4196,7 +4276,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">8</property>
+                                <property name="position">9</property>
                               </packing>
                             </child>
                             <child>
@@ -4301,7 +4381,7 @@ This setting can make it easier to draw with touch.</property>
                               <packing>
                                 <property name="expand">False</property>
                                 <property name="fill">True</property>
-                                <property name="position">9</property>
+                                <property name="position">10</property>
                               </packing>
                             </child>
                           </object>

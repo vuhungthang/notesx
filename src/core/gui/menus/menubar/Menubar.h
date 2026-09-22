@@ -26,6 +26,7 @@ class MainWindow;
 
 class RecentDocumentsSubmenu;
 class ToolbarSelectionSubmenu;
+class WorkspaceSubmenu;
 class PageTypeSubmenu;
 class PluginsSubmenu;
 
@@ -39,6 +40,7 @@ public:
 public:
     inline GMenuModel* getModel() const { return menu; }
     inline ToolbarSelectionSubmenu& getToolbarSelectionSubmenu() const { return *toolbarSelectionSubmenu; }
+    inline WorkspaceSubmenu& getWorkspaceSubmenu() const { return *workspaceSubmenu; }
     inline PageTypeSubmenu& getPageTypeSubmenu() const { return *pageTypeSubmenu; }
 
     void setDisabled(bool disabled);
@@ -62,6 +64,7 @@ private:
     // Dynamically created submenus -- also add to forEachSubmenu() below
     std::unique_ptr<RecentDocumentsSubmenu> recentDocumentsSubmenu;
     std::unique_ptr<ToolbarSelectionSubmenu> toolbarSelectionSubmenu;
+    std::unique_ptr<WorkspaceSubmenu> workspaceSubmenu;
     std::unique_ptr<PageTypeSubmenu> pageTypeSubmenu;
 #ifdef ENABLE_PLUGINS
     std::unique_ptr<PluginsSubmenu> pluginsSubmenu;
@@ -71,6 +74,7 @@ private:
     void forEachSubmenu(Fun&& fun) {
         fun(*recentDocumentsSubmenu);
         fun(*toolbarSelectionSubmenu);
+        fun(*workspaceSubmenu);
         fun(*pageTypeSubmenu);
 #ifdef ENABLE_PLUGINS
         fun(*pluginsSubmenu);

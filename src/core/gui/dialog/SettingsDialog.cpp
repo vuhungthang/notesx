@@ -188,6 +188,13 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
                              this);
     g_signal_connect_swapped(builder.get("btCancel"), "clicked", G_CALLBACK(gtk_window_close), window.get());
 
+    // Plan 002: the menubar checkbox belongs to the workspace the user selected, so it is
+    // refreshed when the workspace changes inside the dialog.
+    g_signal_connect_swapped(builder.get("rdWorkspaceFocus"), "toggled",
+                             G_CALLBACK(+[](SettingsDialog* self) { self->updateWorkspaceMenubarCheckbox(); }), this);
+    g_signal_connect_swapped(builder.get("rdWorkspaceClassic"), "toggled",
+                             G_CALLBACK(+[](SettingsDialog* self) { self->updateWorkspaceMenubarCheckbox(); }), this);
+
     g_signal_connect(builder.get("cbUseSpacesAsTab"), "toggled",
                      G_CALLBACK(+[](GtkCheckButton* checkBox, SettingsDialog* self) {
                          self->enableWithCheckbox("cbUseSpacesAsTab", "numberOfSpacesContainer");
@@ -233,6 +240,15 @@ void SettingsDialog::loadCheckbox(const char* name, bool value) {
 
 auto SettingsDialog::getCheckbox(const char* name) -> bool {
     return gtk_check_button_get_active(GTK_CHECK_BUTTON(builder.get(name)));
+}
+
+auto SettingsDialog::getWorkspaceMode() -> WorkspaceMode {
+    return gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(builder.get("rdWorkspaceClassic"))) ? WorkspaceMode::CLASSIC :
+                                                                                                WorkspaceMode::FOCUS;
+}
+
+void SettingsDialog::updateWorkspaceMenubarCheckbox() {
+    loadCheckbox("cbHideMenubarStartup", settings->isWorkspaceMenubarVisible(getWorkspaceMode()));
 }
 
 void SettingsDialog::loadSlider(const char* name, double value) {
@@ -622,6 +638,13 @@ void SettingsDialog::load() {
     loadCheckbox("cbShowFilepathInTitlebar", settings->isFilepathInTitlebarShown());
     loadCheckbox("cbShowPageNumberInTitlebar", settings->isPageNumberInTitlebarShown());
 
+    // Plan 002: the workspace radio group. Focusing the active radio also leaves the
+    // "Show Menubar on Startup" checkbox at the active workspace's preference.
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(builder.get(getWorkspaceMode() == WorkspaceMode::CLASSIC ?
+                                                                        "rdWorkspaceClassic" :
+                                                                        "rdWorkspaceFocus")),
+                                 true);
+
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("preloadPagesBefore")),
                               static_cast<double>(settings->getPreloadPagesBefore()));
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("preloadPagesAfter")),
@@ -906,6 +929,12 @@ void SettingsDialog::save() {
     viewModePresentation.goFullscreen = getCheckbox("cbPresentationGoFullscreen");
     settings->setViewMode(PresetViewModeIds::VIEW_MODE_PRESENTATION, viewModePresentation);
 
+    // Plan 002: the workspace restores its own menubar preference, so it is applied before
+    // the checkbox below.
+    const WorkspaceMode workspaceMode = getWorkspaceMode();
+    if (workspaceMode != settings->getWorkspaceMode()) {
+        settings->setWorkspaceMode(workspaceMode);
+    }
     settings->setMenubarVisible(getCheckbox("cbHideMenubarStartup"));
     settings->setFilepathInTitlebarShown(getCheckbox("cbShowFilepathInTitlebar"));
     settings->setPageNumberInTitlebarShown(getCheckbox("cbShowPageNumberInTitlebar"));

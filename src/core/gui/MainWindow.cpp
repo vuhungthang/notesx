@@ -24,6 +24,7 @@
 #include "gui/inputdevices/InputEvents.h"               // for INPUT_DEVICE_TOUC...
 #include "gui/menus/menubar/Menubar.h"                  // for Menubar
 #include "gui/menus/menubar/ToolbarSelectionSubmenu.h"  // for ToolbarSelectionSubmenu
+#include "gui/menus/menubar/WorkspaceSubmenu.h"         // for WorkspaceSubmenu
 #include "gui/scroll/ScrollHandling.h"                  // for ScrollHandling
 #include "gui/sidebar/Sidebar.h"                        // for Sidebar
 #include "gui/toolbarMenubar/ToolMenuHandler.h"         // for ToolMenuHandler
@@ -160,6 +161,10 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
     control->registerPluginToolButtons(this->toolbar.get());
 
     createToolbar();
+
+    // Plan 002: the workspace decides the initial toolbar and menubar chrome. The view mode
+    // (fullscreen, presentation) and the sidebar stay user controlled.
+    applyWorkspaceChrome();
 
     setToolbarVisible(control->getSettings()->isToolbarVisible());
 }
@@ -701,6 +706,30 @@ void MainWindow::setDynamicallyGeneratedSubmenuDisabled(bool disabled) { menubar
 
 void MainWindow::updateToolbarMenu() {
     menubar->getToolbarSelectionSubmenu().update(toolbar.get(), this->selectedToolbar);
+}
+
+void MainWindow::updateWorkspaceMenu() { menubar->getWorkspaceSubmenu().update(); }
+
+void MainWindow::setWorkspace(WorkspaceMode mode) {
+    control->getSettings()->setWorkspaceMode(mode);
+    applyWorkspaceChrome();
+}
+
+void MainWindow::applyWorkspaceChrome() {
+    Settings* settings = control->getSettings();
+
+    // The toolbar of the active workspace: the Focus preset, unless the user picked another
+    // layout while in Focus. Classic restores the toolbar it was left with.
+    toolbarSelected(settings->getSelectedToolbar());
+    // toolbarSelected() loads the layout but leaves the View > Toolbar radio on the previous
+    // workspace's choice, so the menu is refreshed to match the layout just loaded.
+    updateToolbarMenu();
+
+    // Focus hides the traditional menubar; it stays reachable with F10, the View menu and
+    // (while the menubar is hidden) the Settings dialog.
+    control->setShowMenubar(settings->isMenubarVisible());
+
+    updateWorkspaceMenu();
 }
 
 void MainWindow::createToolbar() {

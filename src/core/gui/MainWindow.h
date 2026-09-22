@@ -22,6 +22,7 @@
 #include <glib.h>         // for gpointer, gboolean, gint
 #include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
+#include "control/settings/SettingsEnums.h"  // for WorkspaceMode
 #include "util/Point.h"
 #include "util/raii/GObjectSPtr.h"
 
@@ -103,7 +104,21 @@ public:
     void setDynamicallyGeneratedSubmenuDisabled(bool disabled);
 
     void updateToolbarMenu();
+    void updateWorkspaceMenu();
     void updateColorscheme();
+
+    /**
+     * Plan 002: switch the workspace and apply its chrome. The switch is immediate: no
+     * restart is needed and the previous workspace's selections are remembered.
+     */
+    void setWorkspace(WorkspaceMode mode);
+
+    /**
+     * Apply the chrome of the active workspace: its toolbar selection and its menubar
+     * preference. The sidebar, fullscreen and presentation behaviour are left alone; they
+     * stay user controlled.
+     */
+    void applyWorkspaceChrome();
 
     const ToolbarWidgetArray& getToolbarWidgets() const;
     const char* getToolbarName(GtkToolbar* toolbar) const;

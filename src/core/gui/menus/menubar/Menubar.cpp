@@ -12,6 +12,7 @@
 #include "PluginsSubmenu.h"
 #include "RecentDocumentsSubmenu.h"
 #include "ToolbarSelectionSubmenu.h"
+#include "WorkspaceSubmenu.h"
 #include "config-features.h"  // for ENABLE_PLUGINS
 
 constexpr auto MENU_XML_FILE = "mainmenubar.xml";
@@ -69,6 +70,7 @@ void Menubar::populate(const GladeSearchpath* gladeSearchPath, MainWindow* win) 
     recentDocumentsSubmenu = std::make_unique<RecentDocumentsSubmenu>(ctrl, GTK_APPLICATION_WINDOW(win->getWindow()));
     toolbarSelectionSubmenu =
             std::make_unique<ToolbarSelectionSubmenu>(win, ctrl->getSettings(), win->getToolMenuHandler());
+    workspaceSubmenu = std::make_unique<WorkspaceSubmenu>(win, ctrl->getSettings());
     pageTypeSubmenu = std::make_unique<PageTypeSubmenu>(ctrl->getPageTypes(), ctrl->getPageBackgroundChangeController(),
                                                         ctrl->getSettings(), GTK_APPLICATION_WINDOW(win->getWindow()));
 #ifdef ENABLE_PLUGINS

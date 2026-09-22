@@ -18,6 +18,7 @@
 #include <gtk/gtk.h>  // for GtkWidget, GtkWindow
 
 #include "audio/DeviceInfo.h"                    // for DeviceInfo
+#include "control/settings/SettingsEnums.h"     // for WorkspaceMode
 #include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
 #include "gui/Builder.h"
 #include "util/raii/GtkWindowUPtr.h"
@@ -65,6 +66,16 @@ private:
      * pressure sensitivity options (e.g. pressure multiplier).
      */
     void updatePressureSensitivityOptions();
+
+    /**
+     * Plan 002: the workspace the user picked in the dialog.
+     */
+    WorkspaceMode getWorkspaceMode();
+
+    /**
+     * Plan 002: show the menubar preference of the workspace the user just selected.
+     */
+    void updateWorkspaceMenubarCheckbox();
 
 private:
     void load();

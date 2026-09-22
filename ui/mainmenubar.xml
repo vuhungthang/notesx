@@ -213,6 +213,12 @@
     </item>
    </section>
    <section>
+    <!-- Filled dynamically by WorkspaceSubmenu (Plan 002) -->
+    <submenu id="menuViewWorkspace">
+     <attribute name="label" translatable="yes">_Workspace</attribute>
+    </submenu>
+   </section>
+   <section>
     <submenu>
      <attribute name="label" translatable="yes">Layout</attribute>
      <section>
