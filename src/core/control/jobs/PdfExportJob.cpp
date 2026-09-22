@@ -35,8 +35,11 @@ void PdfExportJob::run() {
 
     if (!pdfe->createPdf(this->filepath, false)) {
         this->errorMsg = pdfe->getLastError();
-        if (control->getWindow()) {
-            callAfterRun();
-        }
+    }
+
+    // Plan 004: the outcome is reported either way, so the editor can confirm an export as well
+    // as complain about one.
+    if (control->getWindow()) {
+        callAfterRun();
     }
 }

@@ -98,7 +98,16 @@ auto BaseExportJob::testAndSetFilepath(const fs::path& file) -> bool {
 }
 
 void BaseExportJob::afterRun() {
+    /*
+     * Plan 004: an export reports its outcome either way. It is feedback about a file that was
+     * written somewhere else, so it is reported as an export and never as a statement about the
+     * document's own saved state.
+     */
     if (!this->errorMsg.empty()) {
+        this->control->getSafetyState()->exportFailed(this->errorMsg);
         XojMsgBox::showErrorToUser(control->getGtkWindow(), this->errorMsg);
+        return;
     }
+
+    this->control->getSafetyState()->exportSucceeded(this->filepath);
 }

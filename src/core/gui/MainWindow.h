@@ -22,6 +22,7 @@
 #include <glib.h>         // for gpointer, gboolean, gint
 #include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
+#include "control/DocumentSafetyState.h"      // for SafetySnapshot
 #include "control/settings/SettingsEnums.h"  // for WorkspaceMode
 #include "util/Point.h"
 #include "util/raii/GObjectSPtr.h"
@@ -40,6 +41,7 @@ class XournalView;
 class PdfFloatingToolbox;
 class FloatingToolbox;
 class GladeSearchpath;
+class SafetyStatusBar;
 
 class Menubar;
 
@@ -97,6 +99,12 @@ public:
 
     void setUndoDescription(const std::string& description);
     void setRedoDescription(const std::string& description);
+
+    /**
+     * Plan 004: show the document's safety state. The window renders what the safety model says
+     * and decides nothing about it.
+     */
+    void updateSafetyStatus(const xoj::safety::SafetySnapshot& snapshot);
 
     ToolbarModel* getToolbarModel() const;
     ToolMenuHandler* getToolMenuHandler() const;
@@ -187,6 +195,9 @@ private:
     ToolbarData* selectedToolbar = nullptr;
 
     std::unique_ptr<Menubar> menubar;
+
+    /// Plan 004: the document-safety row, directly under the top toolbars.
+    std::unique_ptr<SafetyStatusBar> safetyStatusBar;
 
     bool maximized = false;
     bool darkMode = false;

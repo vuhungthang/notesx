@@ -126,6 +126,11 @@ Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath, bool di
     this->undoRedo->addUndoRedoListener(this);
     this->isBlocking = false;
 
+    // Plan 004: the safety state exists before anything can report to it - the jobs, the undo
+    // history and the export paths all reach it through the Control.
+    this->safety = std::make_unique<xoj::safety::DocumentSafetyState>();
+    this->safety->addListener(this);
+
     this->gladeSearchPath = gladeSearchPath;
 
     this->metadata = new MetadataManager();
@@ -181,6 +186,9 @@ Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath, bool di
 }
 
 Control::~Control() {
+    // Nothing may report to a half-destroyed Control.
+    this->safety->removeListener(this);
+
     g_source_remove(this->changeTimout);
     this->enableAutosave(false);
 
@@ -329,6 +337,9 @@ void Control::initWindow(MainWindow* win) {
     this->clipboardHandler = new ClipboardHandler(this, win->getXournal()->getWidget());
 
     this->enableAutosave(settings->isAutosaveEnabled());
+
+    // Plan 004: the row has to say something from the first moment the window exists.
+    this->pushSafetyState();
 }
 
 auto Control::autosaveCallback(Control* control) -> bool {
@@ -337,11 +348,22 @@ auto Control::autosaveCallback(Control* control) -> bool {
         return true;
     }
 
-    auto* job = new AutosaveJob(control);
-    control->scheduler->addJob(job, JOB_PRIORITY_NONE);
-    job->unref();
+    control->autosaveNow();
 
     return true;
+}
+
+void Control::autosaveNow() {
+    /*
+     * Plan 004: the safety state is told here, on the UI thread, before the job is handed to the
+     * scheduler. The completion is reported from AutosaveJob::afterRun(), which the job marshals
+     * back to this thread, so the model is only ever touched from one thread.
+     */
+    this->safety->autosaveStarted();
+
+    auto* job = new AutosaveJob(this);
+    this->scheduler->addJob(job, JOB_PRIORITY_NONE);
+    job->unref();
 }
 
 void Control::enableAutosave(bool enable) {
@@ -1146,6 +1168,14 @@ void Control::undoRedoChanged() {
     win->setUndoDescription(undoRedo->undoDescription());
     win->setRedoDescription(undoRedo->redoDescription());
 
+    /*
+     * Plan 004: the undo history is what decides whether the document differs from the last
+     * explicit save, so it is also what the safety state is told. An edit that arrives while a
+     * save or an autosave is running reaches here too, which is how the model knows the file
+     * being written does not contain it.
+     */
+    this->safety->documentStateChanged(undoRedo->isChanged());
+
     updateWindowTitle();
 }
 
@@ -1560,6 +1590,13 @@ void Control::askToOpenFile() {
 
 void Control::replaceDocument(std::unique_ptr<Document> doc, int scrollToPage) {
     this->closeDocument();
+
+    /*
+     * Plan 004: nothing is known about the new document - not whether it has been saved, not
+     * whether a recovery copy covers it. Resetting also makes a save, autosave or export that was
+     * started for the previous document report into nothing when it finishes.
+     */
+    this->safety->resetDocument();
 
     fs::path filepath = doc->getFilepath();
 
@@ -2115,6 +2152,8 @@ void Control::exportAsPdf() {
     auto* job = new PdfExportJob(this);
     job->showFileChooser(
             [ctrl = this, job]() {
+                // Plan 004: the export is announced once its destination is known, never before.
+                ctrl->safety->exportStarted();
                 ctrl->scheduler->addJob(job, JOB_PRIORITY_NONE);
                 job->unref();
             },
@@ -2146,6 +2185,13 @@ void Control::saveImpl(bool saveAs, std::function<void(bool)> callback) {
     auto doSave = [ctrl = this, cb = std::move(callback)]() {
         // clear selection before saving
         ctrl->clearSelectionEndText();
+
+        /*
+         * Plan 004: the save is announced before the job is queued, so the editor shows that a
+         * write is on its way instead of looking idle until the job thread picks it up. The
+         * outcome is reported by SaveJob itself, once the file really has been written.
+         */
+        ctrl->safety->saveStarted();
 
         auto* job = new SaveJob(ctrl, std::move(cb));
         ctrl->scheduler->addJob(job, JOB_PRIORITY_URGENT);
@@ -2182,6 +2228,69 @@ void Control::resetSavedStatus() {
     this->undoRedo->documentSaved();
     RecentManager::addRecentFileFilename(filepath);
     this->updateWindowTitle();
+}
+
+auto Control::getSafetyState() const -> xoj::safety::DocumentSafetyState* { return this->safety.get(); }
+
+void Control::safetyStateChanged() { this->pushSafetyState(); }
+
+void Control::pushSafetyState() {
+    if (this->win == nullptr) {
+        return;
+    }
+    this->win->updateSafetyStatus(this->safety->getSnapshot());
+}
+
+auto Control::getRecoveryCandidates() const -> std::vector<xoj::safety::RecoveryCandidate> {
+    /*
+     * The autosave cache folder holds the unnamed copies. A named copy sits next to the document it
+     * came from, so the folder of the document that is open is searched as well. Nothing here
+     * parses a document: a candidate is described from its metadata and its first bytes, which is
+     * what keeps this cheap enough to run while the user is drawing.
+     */
+    std::vector<fs::path> folders = xoj::safety::RecoveryInventory::defaultSearchFolders();
+
+    this->doc->lock_shared();
+    const fs::path current = this->doc->getFilepath();
+    this->doc->unlock_shared();
+    if (!current.empty()) {
+        folders.emplace_back(current.parent_path());
+    }
+
+    return xoj::safety::RecoveryInventory::scan(folders);
+}
+
+void Control::showSafetyDetails(const std::string& details, bool retryable) {
+    if (!retryable) {
+        XojMsgBox::askQuestion(getGtkWindow(), _("Document safety"), details, {{_("Close"), 1}}, [](int) {});
+        return;
+    }
+
+    // The error is persistent, so the dialog is where a user asks for it to be looked at rather
+    // than something that interrupts them: it can be closed and read again.
+    enum { RETRY = 1, CLOSE };
+    std::vector<XojMsgBox::Button> buttons = {{_("Retry"), RETRY}, {_("Close"), CLOSE}};
+    XojMsgBox::askQuestion(getGtkWindow(), _("Document safety"), details, std::move(buttons),
+                           [ctrl = this](int response) {
+                               if (response == RETRY) {
+                                   ctrl->retryFailedSafetyOperation();
+                               }
+                           });
+}
+
+void Control::retryFailedSafetyOperation() {
+    switch (this->safety->getSnapshot().failedOperation) {
+        case xoj::safety::SafetyOperation::Save:
+            this->save();
+            return;
+        case xoj::safety::SafetyOperation::Autosave:
+            this->autosaveNow();
+            return;
+        case xoj::safety::SafetyOperation::Export:
+        case xoj::safety::SafetyOperation::None:
+            // An export is a one-off action with its own dialog; there is nothing to run again.
+            return;
+    }
 }
 
 void Control::quit(bool allowCancel) {
@@ -2226,13 +2335,37 @@ void Control::close(std::function<void(bool)> callback, const bool allowDestroy,
 
     resetGeometryTool();
 
-    bool safeToClose = forceClose || !undoRedo->isChanged();
+    /*
+     * Plan 004: the safety state is asked as well as the undo history, and the answers are
+     * combined with a union. The safety state still remembers an edit that arrived while a save
+     * was running, which the undo history has already counted as saved; a close prompt that
+     * trusted only one of the two would be a prompt that can lose work.
+     */
+    const bool undoHistoryChanged = undoRedo->isChanged();
+    const bool safetyStateModified = this->safety->isDocumentModified();
+    bool safeToClose = forceClose || !(undoHistoryChanged || safetyStateModified);
     if (!safeToClose) {
         fs::path path = doc->getFilepath();
         const bool fileRemoved = !path.empty() && !fs::exists(path);
-        const auto message = fileRemoved ? _("Document file was removed.") : _("This document is not saved yet.");
         const bool saveAs = fileRemoved || path.empty();
         const auto saveLabel = saveAs ? _("Save As...") : _("Save");
+
+        const xoj::safety::SafetySnapshot snapshot = this->safety->getSnapshot();
+        std::string message;
+        if (fileRemoved) {
+            message = _("Document file was removed.");
+        } else if (snapshot.state == xoj::safety::SafetyState::Error) {
+            // The strongest warning the editor has: the work is not on disk and the last attempt
+            // to put it there failed.
+            message = _("This document is not saved yet, and the last save or autosave failed.\n"
+                        "Closing now will lose the changes made since the last save.");
+        } else if (snapshot.recoveryCopyExists) {
+            // Recoverable is not saved. The prompt says which of the two this is.
+            message = _("This document is not saved yet. A recovery copy of your work exists, "
+                        "but it is not your file.");
+        } else {
+            message = _("This document is not saved yet.");
+        }
 
         enum { SAVE = 1, DISCARD, CANCEL };
         std::vector<XojMsgBox::Button> buttons = {{saveLabel, SAVE}, {_("Discard"), DISCARD}};

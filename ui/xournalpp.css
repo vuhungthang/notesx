@@ -184,6 +184,49 @@ toolbar.editing {
 }
 
 /*
+ * The document safety row (Plan 004). It is a status bar and not a floating message: it sits
+ * under the top toolbars, next to the page controls, and it keeps one height in every state, so
+ * a change of state never moves the canvas. The state's colour comes from the .xoj-status-*
+ * classes above, and the icon and the text label carry the same state, so nothing is left to
+ * colour alone.
+ */
+.xoj-safety-status {
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+	padding: 0 8px;
+	min-height: 26px;
+}
+
+.xoj-safety-status-icon {
+	min-width: 16px;
+	min-height: 16px;
+}
+
+.xoj-safety-status-text {
+	font-size: smaller;
+}
+
+/*
+ * A failure is reported here instead of in a modal dialog: the banner is revealed beside the
+ * state, never above it, so revealing it cannot change the height of the row.
+ */
+.xoj-safety-status-banner {
+	font-size: smaller;
+	opacity: 0.9;
+}
+
+/*
+ * The row's own controls are smaller than a toolbar button on purpose: they have to fit inside
+ * the row's fixed height, which is what keeps the canvas where it is.
+ */
+.xoj-safety-status-action {
+	min-width: 22px;
+	min-height: 22px;
+	padding: 0 6px;
+	border-radius: 4px;
+}
+
+/*
  * The favourite preset strip. The buttons are ordinary .xoj-control buttons;
  * the strip only removes the toolbar's own item spacing so the presets read as
  * one group.

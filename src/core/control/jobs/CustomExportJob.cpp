@@ -56,6 +56,8 @@ void CustomExportJob::showDialogAndRun() {
         Util::execInUiThread([job]() {
             if (job->filepath.extension() == ".xoj") {
                 job->exportTypeXoj = true;
+                // Plan 004: the export is announced once its destination is known, never before.
+                job->control->getSafetyState()->exportStarted();
                 job->control->getScheduler()->addJob(job, JOB_PRIORITY_NONE);
                 return;
             }
@@ -85,6 +87,8 @@ void CustomExportJob::showDialogAndRun() {
                                 job->pngQualityParameter = dialog.getPngQualityParameter();
                             }
 
+                            // Plan 004: the export is announced once its destination is known.
+                            job->control->getSafetyState()->exportStarted();
                             job->control->getScheduler()->addJob(job, JOB_PRIORITY_NONE);
                         } else {
                             // The job blocked, so we have to unblock, because the job
@@ -130,8 +134,6 @@ void CustomExportJob::run() {
 
         if (!h.getErrorMessage().empty()) {
             this->lastError = FS(_F("Save file error: {1}") % h.getErrorMessage());
-
-            callAfterRun();
         }
     } else if (format == EXPORT_GRAPHICS_PDF) {
         // don't lock the page here for the whole flow, else we get a dead lock...
@@ -149,10 +151,26 @@ void CustomExportJob::run() {
     } else {
         exportGraphics();
     }
+
+    // Plan 004: the outcome is reported either way, so the editor can confirm an export as well
+    // as complain about one.
+    callAfterRun();
 }
 
 void CustomExportJob::afterRun() {
+    /*
+     * Plan 004: whichever way this export went, it says nothing about whether the document itself
+     * has been saved, and the safety state is told which of the two things happened.
+     */
     if (!this->lastError.empty()) {
+        this->control->getSafetyState()->exportFailed(this->lastError);
         XojMsgBox::showErrorToUser(control->getGtkWindow(), this->lastError);
+        return;
     }
+    if (!this->errorMsg.empty()) {
+        this->control->getSafetyState()->exportFailed(this->errorMsg);
+        return;
+    }
+
+    this->control->getSafetyState()->exportSucceeded(this->filepath);
 }

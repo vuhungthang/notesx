@@ -36,9 +36,17 @@ void SaveJob::run() {
 
 void SaveJob::afterRun() {
     if (!this->lastError.empty()) {
+        /*
+         * Plan 004: the failure is recorded before the dialog, so the editor keeps saying that
+         * this document is not safe even after the message box is dismissed.
+         */
+        this->control->getSafetyState()->saveFailed(this->lastError);
         XojMsgBox::showErrorToUser(control->getGtkWindow(), this->lastError);
         callback(false);
     } else {
+        // Only ever on a write that really happened: afterRun() follows run(), and run() leaves
+        // lastError empty only when the file was written.
+        this->control->getSafetyState()->saveSucceeded(this->savedFilepath);
         this->control->resetSavedStatus();
         callback(true);
     }
@@ -110,6 +118,9 @@ auto SaveJob::save() -> bool {
 
     h.prepareSave(doc, target);
     doc->unlock_shared();
+
+    // Where the write is going, so the safety state can name the file it reports on (Plan 004).
+    this->savedFilepath = target;
 
     auto const createBackup = doc->shouldCreateBackupOnSave();
 

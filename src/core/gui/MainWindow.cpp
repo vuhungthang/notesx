@@ -21,6 +21,7 @@
 #include "gui/GladeGui.h"                               // for GladeGui
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
 #include "gui/SearchBar.h"                              // for SearchBar
+#include "gui/SafetyStatusBar.h"                        // for SafetyStatusBar (Plan 004)
 #include "gui/inputdevices/InputEvents.h"               // for INPUT_DEVICE_TOUC...
 #include "gui/menus/menubar/Menubar.h"                  // for Menubar
 #include "gui/menus/menubar/ToolbarSelectionSubmenu.h"  // for ToolbarSelectionSubmenu
@@ -72,6 +73,23 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     boxContainerWidget.reset(get("mainContentContainer"), xoj::util::ref);
     mainContentWidget.reset(get("boxContents"), xoj::util::ref);
     sidebarWidget.reset(get("sidebar"), xoj::util::ref);
+
+    /*
+     * Plan 004: the document-safety row goes under the top toolbars, next to the page controls,
+     * rather than floating over the page. It is packed into the box that already holds the canvas
+     * as its only child, so it never competes with a toolbar for a slot and never covers content.
+     */
+    this->safetyStatusBar = std::make_unique<SafetyStatusBar>(SafetyStatusBar::Callbacks{
+            .showDetails =
+                    [control](const std::string& details, bool retryable) {
+                        control->showSafetyDetails(details, retryable);
+                    },
+            .retry = [control]() { control->retryFailedSafetyOperation(); },
+            .refresh = [this]() { this->control->pushSafetyState(); }});
+
+    GtkWidget* safetyRow = this->safetyStatusBar->getWidget();
+    gtk_box_pack_start(GTK_BOX(boxContainerWidget.get()), safetyRow, FALSE, FALSE, 0);
+    gtk_box_reorder_child(GTK_BOX(boxContainerWidget.get()), safetyRow, 0);
 
     loadMainCSS(gladeSearchPath, "xournalpp.css");
 
@@ -740,6 +758,12 @@ void MainWindow::createToolbar() {
 
 void MainWindow::updatePageNumbers(size_t page, size_t pagecount, size_t pdfpage) {
     toolbar->setPageInfo(page, pagecount, pdfpage);
+}
+
+void MainWindow::updateSafetyStatus(const xoj::safety::SafetySnapshot& snapshot) {
+    if (this->safetyStatusBar) {
+        this->safetyStatusBar->update(snapshot);
+    }
 }
 
 auto MainWindow::getMenubar() const -> Menubar* { return menubar.get(); }

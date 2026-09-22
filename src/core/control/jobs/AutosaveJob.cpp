@@ -8,7 +8,6 @@
 #include "model/Document.h"               // for Document
 #include "undo/UndoRedoHandler.h"         // for UndoRedoHandler
 #include "util/PathUtil.h"                // for clearExtensions, getAutosav...
-#include "util/XojMsgBox.h"               // for XojMsgBox
 #include "util/i18n.h"                    // for FS, _F
 
 #include "filesystem.h"  // for path
@@ -18,14 +17,23 @@ AutosaveJob::AutosaveJob(Control* control): control(control) {}
 AutosaveJob::~AutosaveJob() = default;
 
 void AutosaveJob::afterRun() {
-    std::string msg = FS(_F("Error while autosaving: {1}") % this->error);
-    XojMsgBox::showErrorToUser(control->getGtkWindow(), msg);
+    /*
+     * Plan 004: an autosave failure no longer interrupts the user with a modal dialog. It is
+     * reported to the safety state, which keeps it visible until it is dealt with and offers the
+     * details behind one control - and it is still logged, and still an error, not a warning that
+     * is quietly dropped.
+     */
+    if (!this->error.empty()) {
+        g_warning("Autosave failed: %s", this->error.c_str());
+        this->control->getSafetyState()->autosaveFailed(this->error);
+        return;
+    }
+
+    this->control->getSafetyState()->autosaveSucceeded(this->recoveryFile);
 }
 
 void AutosaveJob::run() {
     SaveHandler handler;
-
-    control->getUndoRedoHandler()->documentAutosaved();
 
     Document* doc = control->getDocument();
 
@@ -54,9 +62,7 @@ void AutosaveJob::run() {
     doc->unlock();
 
     this->error = handler.getErrorMessage();
-    if (!this->error.empty()) {
-        callAfterRun();
-    } else {
+    if (this->error.empty()) {
         try {
             if (fs::exists(filepath)) {
                 fs::path swaptmpfile = filepath;
@@ -69,11 +75,22 @@ void AutosaveJob::run() {
                 Util::safeRenameFile(tempfile, filepath);
             }
             control->setLastAutosaveFile(filepath);
+            this->recoveryFile = filepath;
+
+            /*
+             * Plan 004: the undo position is recorded only now, when the copy is really on disk.
+             * Recording it before the write would make a failed autosave look autosaved, and the
+             * next tick would then skip the retry that the user needs.
+             */
+            control->getUndoRedoHandler()->documentAutosaved();
         } catch (const fs::filesystem_error& e) {
             auto fmtstr = _F("Could not rename autosave file from \"{1}\" to \"{2}\": {3}");
             this->error = FS(fmtstr % tempfile.u8string() % filepath.u8string() % e.what());
         }
     }
+
+    // The outcome is reported on the UI thread, whether it is a success or a failure.
+    callAfterRun();
 }
 
 auto AutosaveJob::getType() -> JobType { return JOB_TYPE_AUTOSAVE; }

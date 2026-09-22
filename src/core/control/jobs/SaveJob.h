@@ -15,6 +15,7 @@
 #include <string>  // for string
 
 #include "BlockingJob.h"  // for BlockingJob
+#include "filesystem.h"   // for path
 
 class Control;
 
@@ -38,6 +39,8 @@ protected:
 
 private:
     std::string lastError;
+    /// The file that was written, once the write really happened (Plan 004).
+    fs::path savedFilepath;
     /// Called after saving, with boolean parameter true on success, false on failure (error)
     std::function<void(bool)> callback;
 };

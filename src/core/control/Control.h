@@ -34,10 +34,12 @@
 #include "model/PageRef.h"                          // for PageRef
 #include "undo/UndoRedoHandler.h"                   // for UndoRedoHandler (ptr only)
 
-#include "ClipboardHandler.h"   // for ClipboardListener
-#include "ToolConfigAdapter.h"  // for ToolConfigAdapter
-#include "ToolHandler.h"        // for ToolListener
-#include "filesystem.h"         // for path
+#include "ClipboardHandler.h"           // for ClipboardListener
+#include "DocumentSafetyState.h"        // for DocumentSafetyState
+#include "RecoveryInventory.h"          // for RecoveryCandidate
+#include "ToolConfigAdapter.h"          // for ToolConfigAdapter
+#include "ToolHandler.h"                // for ToolListener
+#include "filesystem.h"                 // for path
 
 class LoadHandler;
 class GeometryToolController;
@@ -79,7 +81,8 @@ class Control:
         public DocumentHandler,
         public UndoRedoListener,
         public ClipboardListener,
-        public ProgressListener {
+        public ProgressListener,
+        public xoj::safety::DocumentSafetyState::Listener {
 public:
     Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath, bool disableAudio);
     Control(Control const&) = delete;
@@ -265,6 +268,31 @@ public:
 
     void enableAutosave(bool enable);
 
+    /**
+     * Plan 004: the one source of the visible save state. Everything the editor tells the user
+     * about whether the current document is safe is read from it, and every save, autosave and
+     * export reports its outcome to it.
+     */
+    auto getSafetyState() const -> xoj::safety::DocumentSafetyState*;
+
+    /**
+     * The recovery copies that can be offered to the user, newest first. Read-only and cheap: no
+     * document is parsed, so this is safe to call from the UI thread.
+     */
+    auto getRecoveryCandidates() const -> std::vector<xoj::safety::RecoveryCandidate>;
+
+    /// Show what the last save, autosave and export did, with a way back to a failed operation.
+    void showSafetyDetails(const std::string& details, bool retryable);
+
+    /// Run the operation that failed again, when that operation can be run again.
+    void retryFailedSafetyOperation();
+
+    /// Write a recovery copy now instead of waiting for the autosave timer.
+    void autosaveNow();
+
+    /// Re-read the safety state and show it. Used when a transient confirmation runs out.
+    void pushSafetyState();
+
     void clearSelectionEndText();
 
     void selectAllOnPage();
@@ -353,6 +381,10 @@ public:
     // UndoRedoListener interface
     void undoRedoChanged() override;
     void undoRedoPageChanged(PageRef page) override;
+
+public:
+    // DocumentSafetyState::Listener interface (Plan 004)
+    void safetyStateChanged() override;
 
 public:
     // ProgressListener interface
@@ -537,6 +569,12 @@ private:
      */
     guint autosaveTimeout = 0;
     fs::path lastAutosaveFilename;
+
+    /**
+     * Plan 004: the document-safety state. Created with the Control, so the jobs can report to it
+     * long before there is a window to show it in.
+     */
+    std::unique_ptr<xoj::safety::DocumentSafetyState> safety;
 
     XournalScheduler* scheduler;
 
