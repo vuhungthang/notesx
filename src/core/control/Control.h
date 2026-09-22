@@ -34,9 +34,10 @@
 #include "model/PageRef.h"                          // for PageRef
 #include "undo/UndoRedoHandler.h"                   // for UndoRedoHandler (ptr only)
 
-#include "ClipboardHandler.h"  // for ClipboardListener
-#include "ToolHandler.h"       // for ToolListener
-#include "filesystem.h"        // for path
+#include "ClipboardHandler.h"   // for ClipboardListener
+#include "ToolConfigAdapter.h"  // for ToolConfigAdapter
+#include "ToolHandler.h"        // for ToolListener
+#include "filesystem.h"         // for path
 
 class LoadHandler;
 class GeometryToolController;
@@ -306,6 +307,8 @@ public:
     MetadataManager* getMetadataManager() const;
     Settings* getSettings() const;
     ToolHandler* getToolHandler() const;
+    /// Plan 003: the one place the UI reads and applies the tool configuration through.
+    ToolConfigAdapter* getToolConfigAdapter() const;
     ZoomControl* getZoomControl() const;
     Document* getDocument() const;
     UndoRedoHandler* getUndoRedoHandler() const;
@@ -496,6 +499,7 @@ private:
     SearchBar* searchBar = nullptr;
 
     ToolHandler* toolHandler;
+    ToolConfigAdapter* toolConfigAdapter = nullptr;
 
     ScrollHandler* scrollHandler;
 

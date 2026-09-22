@@ -18,6 +18,7 @@ constexpr auto ATTR_SIZE = "size";
 constexpr auto ATTR_DRAWING_TYPE = "drawingType";
 constexpr auto ATTR_FILL = "fill";
 constexpr auto ATTR_ERASER_TYPE = "eraserType";
+constexpr auto ATTR_LINE_STYLE = "lineStyle";
 constexpr auto ATTR_FAVORITE = "favorite";
 constexpr auto ATTR_BUILTIN = "builtin";
 
@@ -105,6 +106,9 @@ auto ToolPreset::toAttributes() const -> std::map<std::string, std::string> {
     if (this->eraserType) {
         attributes[ATTR_ERASER_TYPE] = std::string(eraserTypeToString(*this->eraserType));
     }
+    if (this->lineStyle) {
+        attributes[ATTR_LINE_STYLE] = *this->lineStyle;
+    }
     if (this->favoriteOrder) {
         attributes[ATTR_FAVORITE] = std::to_string(*this->favoriteOrder);
     }
@@ -134,6 +138,7 @@ auto ToolPreset::fromAttributes(const std::map<std::string, std::string>& attrib
             findEnum<DrawingType, drawingTypeToString>(attributes, ATTR_DRAWING_TYPE, drawingTypeFromString);
     preset.fill = findInt(attributes, ATTR_FILL, 0, 255);
     preset.eraserType = findEnum<EraserType, eraserTypeToString>(attributes, ATTR_ERASER_TYPE, eraserTypeFromString);
+    preset.lineStyle = findValue(attributes, ATTR_LINE_STYLE);
     preset.favoriteOrder = findInt(attributes, ATTR_FAVORITE, 0, 10000);
 
     if (auto value = findValue(attributes, ATTR_BUILTIN)) {

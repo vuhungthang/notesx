@@ -68,6 +68,35 @@ auto ToolConfigAdapter::getState() const -> ToolConfigState {
     return state;
 }
 
+auto ToolConfigAdapter::getThickness(ToolType toolType, ToolSize size) const -> double {
+    if (size < TOOL_SIZE_VERY_FINE || size >= TOOL_SIZE_NONE) {
+        return 0.0;
+    }
+
+    // ToolHandler only has a thickness table for the tools that draw a stroke of a size. Asking
+    // it for any other tool asserts, so the list is spelled out here.
+    switch (toolType) {
+        case TOOL_PEN:
+        case TOOL_ERASER:
+        case TOOL_HIGHLIGHTER:
+        case TOOL_LASER_POINTER_PEN:
+        case TOOL_LASER_POINTER_HIGHLIGHTER:
+            return this->toolHandler.getToolThickness(toolType)[static_cast<size_t>(size)];
+        default:
+            return 0.0;
+    }
+}
+
+void ToolConfigAdapter::selectTool(ToolType toolType) {
+    if (this->toolHandler.getToolType() == toolType) {
+        return;  // Already there: no change, and so no notification either.
+    }
+
+    ToolHandler::CoalescedUpdate update(this->toolHandler);
+    this->toolHandler.selectTool(toolType);
+    this->toolHandler.fireToolChanged();
+}
+
 auto ToolConfigAdapter::applyPreset(const ToolPreset& preset) -> bool {
     if (!preset.isValid()) {
         g_warning("ToolConfigAdapter: refusing to apply an incomplete preset");
@@ -106,6 +135,10 @@ auto ToolConfigAdapter::applyPreset(const ToolPreset& preset) -> bool {
 
     if (preset.eraserType) {
         this->toolHandler.setEraserType(*preset.eraserType);
+    }
+
+    if (preset.lineStyle) {
+        this->toolHandler.setLineStyle(StrokeStyle::parseStyle(*preset.lineStyle));
     }
 
     return true;
@@ -154,6 +187,9 @@ auto ToolConfigAdapter::capturePreset(const std::string& name) const -> ToolPres
     if (preset.toolType == TOOL_ERASER) {
         preset.eraserType = this->toolHandler.getEraserType();
     }
+    if (this->toolHandler.hasCapability(TOOL_CAP_LINE_STYLE)) {
+        preset.lineStyle = StrokeStyle::formatStyle(this->toolHandler.getLineStyle());
+    }
 
     return preset;
 }
@@ -193,7 +229,10 @@ void ToolConfigAdapter::toolConfigChanged() {
 }
 
 void ToolConfigAdapter::notifyObservers(const ToolConfigState& state) {
-    for (ToolConfigObserver* observer: this->observers) {
+    // A copy: an observer may remove itself while being notified, for instance when the popover
+    // it lives in is destroyed by the change it is reacting to.
+    const std::vector<ToolConfigObserver*> observers = this->observers;
+    for (ToolConfigObserver* observer: observers) {
         observer->toolConfigChanged(state);
     }
 }

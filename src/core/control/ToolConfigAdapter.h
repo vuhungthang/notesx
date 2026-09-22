@@ -93,6 +93,25 @@ public:
     ToolConfigState getState() const;
 
     /**
+     * @brief Stroke thickness of `toolType` at `size`.
+     *
+     * Used to draw the width previews of a property popover, so that the sample a user picks is
+     * the sample they get.
+     *
+     * @return the thickness, or 0 when the tool has no thickness table at all
+     */
+    double getThickness(ToolType toolType, ToolSize size) const;
+
+    /**
+     * @brief Switch to a tool without changing anything else.
+     *
+     * A property popover shows the configuration of one tool, so opening it for a tool that is
+     * not the active one has to make that tool active; otherwise its controls would edit the
+     * previous tool and its preview would be wrong.
+     */
+    void selectTool(ToolType toolType);
+
+    /**
      * @brief Apply a stored preset.
      *
      * Every part goes through the existing ToolHandler path, so the toolbar toggles, the

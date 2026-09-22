@@ -160,6 +160,10 @@ Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath, bool di
 
     this->toolHandler = new ToolHandler(this, this->actionDB.get(), this->settings);
     this->toolHandler->loadSettings();
+    // Plan 003: the adapter is created right after the handler, so every representation of the
+    // tool configuration that is built later - the toolbar items, the property popovers - finds
+    // it ready and goes through it instead of reading ToolHandler on its own.
+    this->toolConfigAdapter = new ToolConfigAdapter(*this->toolHandler);
     this->initButtonTool();
 
     /**
@@ -192,6 +196,9 @@ Control::~Control() {
     this->undoRedo = nullptr;
     delete this->settings;
     this->settings = nullptr;
+    // Before the handler: the adapter unregisters itself from it.
+    delete this->toolConfigAdapter;
+    this->toolConfigAdapter = nullptr;
     delete this->toolHandler;
     this->toolHandler = nullptr;
     delete this->sidebar;
@@ -2640,6 +2647,8 @@ auto Control::getCursor() const -> XournalppCursor* { return this->cursor; }
 auto Control::getDocument() const -> Document* { return this->doc; }
 
 auto Control::getToolHandler() const -> ToolHandler* { return this->toolHandler; }
+
+auto Control::getToolConfigAdapter() const -> ToolConfigAdapter* { return this->toolConfigAdapter; }
 
 auto Control::getScheduler() const -> XournalScheduler* { return this->scheduler; }
 

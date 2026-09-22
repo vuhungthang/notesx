@@ -49,6 +49,9 @@ struct ToolPreset {
     std::optional<int> fill;
     /// Eraser mode, for eraser presets.
     std::optional<EraserType> eraserType;
+    /// Line style for tools that have one, in the form the win.tool-pen-line-style action uses
+    /// ("plain", "dash", "dashdot", "dot").
+    std::optional<std::string> lineStyle;
 
     /// Position in the favourite list; absent when the preset is not a favourite.
     std::optional<int> favoriteOrder;

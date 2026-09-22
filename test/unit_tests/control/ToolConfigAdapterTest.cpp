@@ -19,6 +19,7 @@
 #include "control/ToolConfigAdapter.h"
 #include "control/ToolHandler.h"
 #include "control/ToolPreset.h"
+#include "model/StrokeStyle.h"  // for StrokeStyle::parseStyle, formatStyle
 
 /*
  * Plan 003, step 2: one adapter reads the effective tool configuration, applies a preset and
@@ -331,4 +332,157 @@ TEST(ToolConfigAdapterTest, testASingleChangeIsReportedOnce) {
     ASSERT_EQ(observer.updateCount(), 1U);
     EXPECT_EQ(observer.last().color, Colors::red);
     EXPECT_EQ(listener.colorChanges, 1);
+}
+
+TEST(ToolConfigAdapterTest, testWidthPreviewsUseTheThicknessOfTheSizeTheyShow) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    // The thicknesses are the ones ToolHandler reports, and they grow with the size.
+    const double veryFine = adapter.getThickness(TOOL_PEN, TOOL_SIZE_VERY_FINE);
+    const double medium = adapter.getThickness(TOOL_PEN, TOOL_SIZE_MEDIUM);
+    const double veryThick = adapter.getThickness(TOOL_PEN, TOOL_SIZE_VERY_THICK);
+
+    EXPECT_GT(veryFine, 0.0);
+    EXPECT_GT(medium, veryFine);
+    EXPECT_GT(veryThick, medium);
+
+    // The eraser and the highlighter have their own tables.
+    EXPECT_GT(adapter.getThickness(TOOL_HIGHLIGHTER, TOOL_SIZE_MEDIUM), 0.0);
+    EXPECT_GT(adapter.getThickness(TOOL_ERASER, TOOL_SIZE_MEDIUM), 0.0);
+}
+
+TEST(ToolConfigAdapterTest, testWidthPreviewsRefuseToolsWithoutAThicknessTable) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    // Asking ToolHandler for the thickness of these tools asserts, so the adapter has to answer
+    // on its own rather than forward the question.
+    EXPECT_EQ(adapter.getThickness(TOOL_TEXT, TOOL_SIZE_MEDIUM), 0.0);
+    EXPECT_EQ(adapter.getThickness(TOOL_NONE, TOOL_SIZE_MEDIUM), 0.0);
+    EXPECT_EQ(adapter.getThickness(TOOL_PEN, TOOL_SIZE_NONE), 0.0);
+}
+
+TEST(ToolConfigAdapterTest, testSelectingAToolThroughTheAdapterIsReportedOnce) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    RecordingObserver observer;
+    adapter.addObserver(&observer);
+
+    ASSERT_EQ(adapter.getState().toolType, TOOL_PEN);
+    adapter.selectTool(TOOL_ERASER);
+
+    EXPECT_EQ(adapter.getState().toolType, TOOL_ERASER);
+    ASSERT_EQ(observer.updateCount(), 1U);
+    EXPECT_EQ(observer.last().toolType, TOOL_ERASER);
+    EXPECT_EQ(listener.toolChanges, 1);
+}
+
+TEST(ToolConfigAdapterTest, testSelectingTheToolThatIsAlreadyActiveChangesNothing) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    RecordingObserver observer;
+    adapter.addObserver(&observer);
+
+    adapter.selectTool(TOOL_PEN);
+
+    EXPECT_EQ(adapter.getState().toolType, TOOL_PEN);
+    EXPECT_EQ(observer.updateCount(), 0U);
+    EXPECT_EQ(listener.toolChanges, 0);
+}
+
+TEST(ToolConfigAdapterTest, testTheLineStyleIsPartOfAPreset) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    handler.setLineStyle(StrokeStyle::parseStyle("dash"));
+    handler.fireToolChanged();
+
+    const ToolPreset captured = adapter.capturePreset("Dashed pen");
+    ASSERT_TRUE(captured.lineStyle.has_value());
+    EXPECT_EQ(*captured.lineStyle, "dash");
+    EXPECT_EQ(adapter.getState().lineStyle, "dash");
+
+    // Applying it puts the line style back through the same ToolHandler path.
+    ASSERT_TRUE(adapter.applyPreset(
+            ToolPreset{.name = "Plain pen", .toolType = TOOL_PEN, .lineStyle = std::string("plain")}));
+    EXPECT_EQ(adapter.getState().lineStyle, "plain");
+    EXPECT_EQ(StrokeStyle::formatStyle(handler.getLineStyle()), "plain");
+}
+
+TEST(ToolConfigAdapterTest, testAnEraserPresetCarriesNoLineStyle) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    handler.selectTool(TOOL_ERASER);
+    handler.fireToolChanged();
+
+    EXPECT_FALSE(adapter.capturePreset("Eraser").lineStyle.has_value());
+}
+
+TEST(ToolConfigAdapterTest, testAnObserverMayRemoveAnotherObserverWhileBeingNotified) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    // The first observer destroys the second one. This is what happens when a change rebuilds a
+    // toolbar: the popover that lives in the old one goes away while the notification is running.
+    RecordingObserver victim;
+    RecordingObserver remover;
+    auto victimPtr = &victim;
+    remover.onUpdate = [&adapter, victimPtr](std::size_t) {
+        if (adapter.getState().toolType == TOOL_ERASER) {
+            adapter.removeObserver(victimPtr);
+        }
+    };
+
+    adapter.addObserver(&victim);
+    adapter.addObserver(&remover);
+
+    handler.setColor(Colors::red, false);
+    EXPECT_EQ(victim.updateCount(), 1U);
+    EXPECT_EQ(remover.updateCount(), 1U);
+
+    handler.selectTool(TOOL_ERASER);
+    handler.fireToolChanged();
+
+    EXPECT_EQ(remover.updateCount(), 2U);
+    // The victim is notified in the round in which it is removed - it comes first in the list -
+    // but it must not be reached again after that.
+    const std::size_t victimCountWhenRemoved = victim.updateCount();
+
+    handler.setColor(Colors::green, false);
+
+    EXPECT_EQ(victim.updateCount(), victimCountWhenRemoved) << "a removed observer must not be notified again";
+    EXPECT_EQ(remover.updateCount(), 3U);
+}
+
+TEST(ToolConfigAdapterTest, testTheNotificationRoundsAreBounded) {
+    StubToolListener listener;
+    ToolHandler handler(&listener, nullptr, nullptr);
+    ToolConfigAdapter adapter(handler);
+
+    // An observer that never stops changing the configuration is a bug in the observer. The
+    // adapter has to give up rather than hang the UI.
+    int rounds = 0;
+    RecordingObserver observer;
+    observer.onUpdate = [&adapter, &rounds](std::size_t) {
+        if (++rounds < 50) {
+            adapter.selectTool(adapter.getState().toolType == TOOL_PEN ? TOOL_ERASER : TOOL_PEN);
+        }
+    };
+    adapter.addObserver(&observer);
+
+    handler.setColor(Colors::red, false);
+
+    EXPECT_GE(rounds, 1);
+    EXPECT_LE(rounds, 4) << "one change may take at most MAX_NOTIFICATION_ROUNDS rounds";
 }
