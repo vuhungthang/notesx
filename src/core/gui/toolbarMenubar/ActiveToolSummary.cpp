@@ -77,7 +77,9 @@ ActiveToolSummaryItem::ActiveToolSummaryItem(std::string id, ToolConfigAdapter& 
 
 ActiveToolSummaryItem::~ActiveToolSummaryItem() {
     this->adapter.removeObserver(this);
-    // The popovers own their panels, which unregister themselves here.
+    // The popovers own their panels, which unregister themselves here. This runs with the item's
+    // window already gone in the application, so the reference each entry holds is what keeps the
+    // popover alive until this line; releasing it frees the popover and nothing else.
     this->popovers.clear();
 }
 
@@ -140,9 +142,16 @@ auto ActiveToolSummaryItem::getPopoverFor(ToolType toolType) -> GtkWidget* {
     // factory can go away as soon as the popover exists.
     ToolPropertyPopoverFactory factory(this->adapter, this->settings, *provider, this->parent, this->presetsListener);
     GtkWidget* popover = factory.createPopover();
+
+    // The factory hands out a floating reference. Take it as this map's own before the popover is
+    // anchored: gtk_popover_set_relative_to() gives the button - and the toplevel window above it -
+    // ownership of the popover, so a reference built with adopt() afterwards would take none at
+    // all (the popover is not floating any more) while the map would still release one when it is
+    // cleared. That release happens after the window is gone in the application, when the anchor
+    // has already freed the popover.
+    auto inserted = this->popovers.emplace(toolType, xoj::util::WidgetSPtr(popover, xoj::util::refsink));
     gtk_popover_set_relative_to(GTK_POPOVER(popover), this->button);
 
-    auto inserted = this->popovers.emplace(toolType, xoj::util::WidgetSPtr(popover, xoj::util::adopt));
     return inserted.first->second.get();
 }
 

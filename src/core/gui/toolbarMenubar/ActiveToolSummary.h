@@ -72,6 +72,11 @@ private:
     /**
      * One popover per tool, built on first use.
      *
+     * Every entry owns a reference of its own, taken before the popover is anchored to the button.
+     * Anchoring gives the button and its window ownership of the popover too, and this item is
+     * destroyed after its window in the application: without a reference of its own the map would
+     * release a popover the window has already freed.
+     *
      * Nothing is ever destroyed while a change is being reported, so an open popover cannot be
      * torn down from inside the notification that reaches it.
      */

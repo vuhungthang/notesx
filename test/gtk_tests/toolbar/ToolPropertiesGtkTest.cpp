@@ -280,6 +280,78 @@ auto pressKey(GtkWidget* widget, guint keyval) -> bool {
     return handled;
 }
 
+/**
+ * Counts the GLib criticals logged while it is alive.
+ *
+ * A widget that unrefs memory it does not own - a popover released after the window that owned it
+ * is gone, say - does not crash a normal build: GLib logs "g_object_unref: assertion
+ * 'G_IS_OBJECT (object)' failed" and carries on. A test that only looks at the widget tree would
+ * never see it, so the teardown is watched here and a critical is a failure.
+ */
+class CriticalWatch {
+public:
+    CriticalWatch() { this->previous = g_log_set_default_handler(onLog, this); }
+    ~CriticalWatch() { g_log_set_default_handler(this->previous, nullptr); }
+
+    CriticalWatch(const CriticalWatch&) = delete;
+    auto operator=(const CriticalWatch&) -> CriticalWatch& = delete;
+
+    auto count() const -> std::size_t { return this->criticals.size(); }
+
+    /// What was logged, for the failure message of the test that uses this.
+    auto report() const -> std::string {
+        std::string all;
+        for (const std::string& message: this->criticals) {
+            all += message;
+            all += '\n';
+        }
+        return all.empty() ? std::string("no critical was logged") : all;
+    }
+
+private:
+    static void onLog(const gchar* domain, GLogLevelFlags levels, const gchar* message, gpointer data) {
+        auto* self = static_cast<CriticalWatch*>(data);
+        if ((levels & G_LOG_LEVEL_CRITICAL) != 0) {
+            self->criticals.emplace_back(message != nullptr ? message : "");
+        }
+        // Everything is still handed on, so a critical this test is not about stays in the log.
+        // The default handler ignores the data it is given, which is why passing nullptr is fine.
+        if (self->previous != nullptr) {
+            self->previous(domain, levels, message, nullptr);
+        }
+    }
+
+    std::vector<std::string> criticals;
+    GLogFunc previous = nullptr;
+};
+
+/**
+ * The popovers GTK has anchored to a widget of `window`, in the order the accessible tree holds
+ * them.
+ *
+ * A popover is not part of the widget tree of the toolbar that built it - GTK makes it a child of
+ * the toplevel's own bookkeeping, and gtk_container_get_children() does not report it - so the
+ * accessible tree is the only place where a test can see one from the outside.
+ */
+auto anchoredPopovers(GtkWidget* window) -> std::vector<GtkWidget*> {
+    std::vector<GtkWidget*> popovers;
+    AtkObject* accessible = gtk_widget_get_accessible(window);
+    for (int i = 0; i < atk_object_get_n_accessible_children(accessible); i++) {
+        AtkObject* child = atk_object_ref_accessible_child(accessible, i);
+        if (child == nullptr) {
+            continue;
+        }
+        if (GTK_IS_ACCESSIBLE(child)) {
+            GtkWidget* widget = gtk_accessible_get_widget(GTK_ACCESSIBLE(child));
+            if (widget != nullptr && GTK_IS_POPOVER(widget)) {
+                popovers.emplace_back(widget);
+            }
+        }
+        g_object_unref(child);
+    }
+    return popovers;
+}
+
 }  // namespace
 
 /*
@@ -811,9 +883,11 @@ TEST_F(PresetFavoritesStripTest, theStripShowsTheConfiguredNumberOfFavouritesAnd
  * that takes the focus on a click - because the popover it opens has to give the focus back to it
  * when it is closed with Escape.
  *
- * The popover itself is not reachable from here: the summary owns it privately and GTK does not make
- * it a child of the window, so what the popover does when it is shown is asserted in
- * ActiveToolPopoverGateTest, where the tool button hands its popover out.
+ * The popover itself is not reachable from here: the summary owns it privately and GTK does not
+ * make it a child of the window in the widget tree, so what the popover does when it is shown is
+ * asserted in ActiveToolPopoverGateTest, where the tool button hands its popover out. (The
+ * accessible tree is the one place GTK does report it, which is how
+ * ActiveToolSummaryPopoverOwnershipTest can watch it.)
  */
 class ActiveToolSummaryFocusTest: public GtkTest {
     void runTest(GtkApplication* app) override {
@@ -893,3 +967,76 @@ class ActiveToolSummaryFocusTest: public GtkTest {
     }
 };
 TEST_F(ActiveToolSummaryFocusTest, theSummaryFollowsTheToolAndTakesTheFocusItsPopoverReturnsTo) {}
+
+/*
+ * Plan 003, step 4: the summary caches one popover per tool. A popover anchored to a widget of a
+ * window is owned by that window in GTK3, and the summary outlives its window in the application -
+ * the toolbar is torn down with the window, and not always before it. Destroying the summary after
+ * its window must therefore release only what the summary itself holds, and hold something in the
+ * first place: a cache that believes it owns a reference it was never given unrefs memory the
+ * window's teardown already freed.
+ */
+class ActiveToolSummaryPopoverOwnershipTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        ToolFixture fixture;
+        const fs::path settingsFile = freshSettingsFile("xournalpp-test-gtk_active_tool_summary_ownership");
+        Settings settings{settingsFile};
+        IconNameHelper icons{&settings};
+
+        ToolPropertyRegistry registry;
+        xoj::toolbar::addBuiltInToolPropertyProviders(registry, icons);
+        ASSERT_NE(registry.find(TOOL_PEN), nullptr) << "the pen is the tool whose popover this test opens";
+
+        GtkWidget* window = gtk_application_window_new(app);
+        gtk_window_set_default_size(GTK_WINDOW(window), 400, 200);
+        StubPresetListListener presetsListener;
+
+        // Everything the item does while it is taken down is watched from here.
+        CriticalWatch criticals;
+
+        {
+            ActiveToolSummaryItem summary{"ACTIVE_TOOL_SUMMARY", fixture.adapter,  registry, settings,
+                                          GTK_WINDOW(window),    &presetsListener, icons};
+            auto item = static_cast<AbstractToolItem&>(summary).createItem(true);
+            ASSERT_NE(item.get(), nullptr);
+
+            GtkWidget* toolbar = gtk_toolbar_new();
+            gtk_container_add(GTK_CONTAINER(window), toolbar);
+            gtk_container_add(GTK_CONTAINER(toolbar), GTK_WIDGET(item.get()));
+            gtk_widget_show_all(window);
+            settle();
+
+            const std::vector<GtkWidget*> buttons = buttonsOf(GTK_WIDGET(item.get()));
+            ASSERT_GE(buttons.size(), 1U);
+            GtkWidget* button = buttons.front();
+            ASSERT_TRUE(gtk_widget_get_sensitive(button)) << "the active tool has properties to open";
+
+            EXPECT_TRUE(anchoredPopovers(window).empty()) << "nothing is anchored before the first click";
+
+            // The click builds the active tool's popover and caches it.
+            fixture.adapter.selectTool(TOOL_PEN);
+            g_signal_emit_by_name(button, "clicked");
+            settle();
+
+            const std::vector<GtkWidget*> afterFirstClick = anchoredPopovers(window);
+            ASSERT_EQ(afterFirstClick.size(), 1U) << "the click builds the active tool's popover";
+            EXPECT_EQ(gtk_popover_get_relative_to(GTK_POPOVER(afterFirstClick.front())), button)
+                    << "and anchors it to the summary's own button";
+
+            // A second click reuses what the cache holds instead of building another popover.
+            g_signal_emit_by_name(button, "clicked");
+            settle();
+            EXPECT_EQ(anchoredPopovers(window), afterFirstClick) << "the popovers are built once and then cached";
+
+            // The window goes first and takes the anchor - and with it everything GTK holds of the
+            // popover - down. The summary is destroyed after it, which is where the cache is
+            // released: it must free the popover and nothing else.
+            gtk_widget_destroy(window);
+            settle();
+        }
+
+        EXPECT_EQ(criticals.count(), 0U) << criticals.report();
+        fs::remove_all(settingsFile.parent_path());
+    }
+};
+TEST_F(ActiveToolSummaryPopoverOwnershipTest, theCachedPopoverIsReleasedWithoutTouchingWhatTheWindowFreed) {}
