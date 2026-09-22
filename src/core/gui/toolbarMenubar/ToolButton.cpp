@@ -11,6 +11,38 @@
 #include "util/gtk4_helper.h"
 #include "util/raii/GObjectSPtr.h"  // for WidgetSPtr
 
+namespace {
+
+/// What a tool button needs to open the property popover of its own tool.
+struct ActiveToolPopoverData {
+    const ToolPopoverFactory* factory;
+    GtkMenuButton* menuButton;
+};
+
+void freeActiveToolPopoverData(gpointer data) { delete static_cast<ActiveToolPopoverData*>(data); }
+
+/**
+ * Plan 003: a tool's own control opens its property popover when that tool is already active.
+ *
+ * The popover is the one the menu button already owns, so it is anchored where the tool is and
+ * Escape, click-outside and the focus return come from GTK instead of from a hand written
+ * handler. A click on a tool that is not active keeps its old meaning: it selects the tool and
+ * nothing else.
+ */
+void onToolButtonClicked(GtkButton*, gpointer data) {
+    auto* popoverData = static_cast<ActiveToolPopoverData*>(data);
+    if (!popoverData->factory->isActiveTool()) {
+        return;
+    }
+
+    GtkPopover* popover = gtk_menu_button_get_popover(popoverData->menuButton);
+    if (popover != nullptr) {
+        gtk_popover_popup(popover);
+    }
+}
+
+}  // namespace
+
 
 ToolButton::ToolButton(std::string id, Category cat, Action action, std::string iconName, std::string description,
                        bool toggle):
@@ -66,6 +98,12 @@ auto ToolButton::createItem(bool horizontal) -> xoj::util::WidgetSPtr {
         gtk_box_append(box, GTK_WIDGET(menubutton));
 
         gtk_container_add(GTK_CONTAINER(it), GTK_WIDGET(box));
+
+        if (const auto* toolFactory = dynamic_cast<const ToolPopoverFactory*>(popoverFactory)) {
+            auto* data = new ActiveToolPopoverData{toolFactory, menubutton};
+            g_object_set_data_full(G_OBJECT(btn), "xoj-active-tool-popover", data, freeActiveToolPopoverData);
+            g_signal_connect(btn, "clicked", G_CALLBACK(onToolButtonClicked), data);
+        }
 
         g_signal_connect_object(it, "toolbar-reconfigured", G_CALLBACK(+[](GtkToolItem* it, gpointer box) {
                                     gtk_orientable_set_orientation(GTK_ORIENTABLE(box),
