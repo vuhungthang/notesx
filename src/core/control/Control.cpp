@@ -1,8 +1,8 @@
 #include "Control.h"
 
-#include <algorithm>  // for max
-#include <cstdlib>    // for size_t
-#include <exception>  // for exce...
+#include <algorithm>   // for max
+#include <cstdlib>     // for size_t
+#include <exception>   // for exce...
 #include <functional>  // for bind
 #include <iterator>    // for end
 #include <memory>      // for make...
@@ -21,6 +21,7 @@
 #include "control/Tool.h"                                        // for Tool
 #include "control/ToolHandler.h"                                 // for Tool...
 #include "control/actions/ActionDatabase.h"                      // for Acti...
+#include "control/gestures/GestureSettings.h"                    // for GestureSettings (Plan 008)
 #include "control/jobs/AutosaveJob.h"                            // for Auto...
 #include "control/jobs/BaseExportJob.h"                          // for Base...
 #include "control/jobs/CustomExportJob.h"                        // for Cust...
@@ -43,6 +44,7 @@
 #include "gui/MainWindow.h"                                      // for Main...
 #include "gui/PageView.h"                                        // for XojP...
 #include "gui/PdfFloatingToolbox.h"                              // for PdfF...
+#include "gui/QuickPaletteContents.h"                            // for quickPaletteAvailable (Plan 008)
 #include "gui/SearchBar.h"                                       // for Sear...
 #include "gui/XournalView.h"                                     // for Xour...
 #include "gui/XournalppCursor.h"                                 // for Xour...
@@ -464,6 +466,15 @@ void Control::showFloatingToolbox(int x, int y) {
     gint mainBoxX, mainBoxY;
     gtk_widget_translate_coordinates(mainWindow, mainBox, x, y, &mainBoxX, &mainBoxY);
 
+    // Plan 008: when the user has bound the quick palette, that is the surface the stylus summons,
+    // by exactly the binding and tap action that has always summoned the floating toolbox. The
+    // Classic toolbox is left alone and is what is shown when the palette is not bound.
+    const xoj::gesture::GestureSettings& gestures = this->getSettings()->getGestureSettings();
+    if (xoj::gui::quickPaletteAvailable(gestures)) {
+        this->getWindow()->showQuickPaletteAt(mainBoxX, mainBoxY);
+        return;
+    }
+
     this->getWindow()->getFloatingToolbox()->show(mainBoxX, mainBoxY);
 }
 
@@ -775,8 +786,7 @@ void Control::updatePageActions() {
 
     this->actionDB->enableAction(Action::DELETE_PAGE, nbPages > selected);
     this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_BEGINNING, firstSelected != npos && firstSelected != 0);
-    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_END,
-                                 lastSelected != npos && lastSelected + 1 < nbPages);
+    this->actionDB->enableAction(Action::MOVE_PAGE_TOWARDS_END, lastSelected != npos && lastSelected + 1 < nbPages);
 }
 
 void Control::deletePage() {

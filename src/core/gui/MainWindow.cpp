@@ -12,6 +12,10 @@
 #include "control/DeviceListHelper.h"                   // for getSourceMapping
 #include "control/RecentManager.h"                      // for the recent files
 #include "control/ScrollHandler.h"                      // for ScrollHandler
+#include "control/ToolConfigAdapter.h"                  // for ToolConfigAdapter (Plan 003)
+#include "control/ToolEnums.h"                          // for ToolType
+#include "control/ToolHandler.h"                        // for ToolHandler
+#include "control/ToolPreset.h"                         // for ToolPresetList
 #include "control/actions/ActionDatabase.h"             // for ActionDatabase
 #include "control/jobs/XournalScheduler.h"              // for XournalScheduler
 #include "control/layer/LayerController.h"              // for LayerController
@@ -21,10 +25,13 @@
 #include "dashboard/FileWatcher.h"                      // for FileWatcher
 #include "dashboard/RecoveryActions.h"                  // for the recovery file work
 #include "dashboard/ThumbnailCache.h"                   // for ThumbnailCache
+#include "enums/Action.enum.h"                          // for Action_toString
 #include "gui/CommandPalette.h"                         // for CommandPalette (Plan 007)
 #include "gui/FloatingToolbox.h"                        // for FloatingToolbox
 #include "gui/GladeGui.h"                               // for GladeGui
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
+#include "gui/QuickPalette.h"                           // for QuickPalette (Plan 008)
+#include "gui/QuickPaletteContents.h"                   // for buildQuickPaletteSlots (Plan 008)
 #include "gui/SafetyStatusBar.h"                        // for SafetyStatusBar (Plan 004)
 #include "gui/SearchBar.h"                              // for SearchBar
 #include "gui/ShortcutReference.h"                      // for ShortcutReference (Plan 007)
@@ -107,6 +114,9 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     GtkOverlay* overlay = GTK_OVERLAY(get("mainOverlay"));
     this->pdfFloatingToolBox = std::make_unique<PdfFloatingToolbox>(this, overlay);
     this->floatingToolbox = std::make_unique<FloatingToolbox>(this, overlay);
+    // Plan 008: the quick palette lives in the same overlay; it is hidden unless the user has bound
+    // it and the gesture preferences say so, so Classic behaviour is untouched.
+    this->quickPalette = std::make_unique<xoj::gui::QuickPalette>(overlay, GTK_WINDOW(get("mainWindow")));
 
     for (size_t i = 0; i < TOOLBAR_DEFINITIONS_LEN; i++) {
         this->toolbarWidgets[i].reset(get(TOOLBAR_DEFINITIONS[i].guiName), xoj::util::ref);
@@ -1332,6 +1342,90 @@ void MainWindow::loadMainCSS(GladeSearchpath* gladeSearchPath, const gchar* cssF
 PdfFloatingToolbox* MainWindow::getPdfToolbox() const { return this->pdfFloatingToolBox.get(); }
 
 FloatingToolbox* MainWindow::getFloatingToolbox() const { return this->floatingToolbox.get(); }
+
+xoj::gui::QuickPalette* MainWindow::getQuickPalette() const { return this->quickPalette.get(); }
+
+namespace {
+/// Plan 008: the palette's own labels. This tree has no shared tool display-name helper, so the
+/// few tools the palette offers are named here, and anything else falls back to its stable id.
+auto quickPaletteToolLabel(ToolType tool) -> std::string {
+    switch (tool) {
+        case TOOL_PEN:
+            return _("Pen");
+        case TOOL_HIGHLIGHTER:
+            return _("Highlighter");
+        case TOOL_ERASER:
+            return _("Eraser");
+        case TOOL_SELECT_RECT:
+            return _("Select rectangle");
+        case TOOL_SELECT_REGION:
+            return _("Select region");
+        case TOOL_HAND:
+            return _("Hand");
+        default:
+            return std::string(toolTypeToString(tool));
+    }
+}
+}  // namespace
+
+void MainWindow::showQuickPaletteAt(int x, int y) {
+    if (this->quickPalette == nullptr) {
+        return;
+    }
+    // Read the contents now: the favourites may have changed since the last time it was shown.
+    this->quickPalette->setButtons(this->buildQuickPaletteButtons());
+    this->quickPalette->showAt(static_cast<double>(x), static_cast<double>(y));
+}
+
+auto MainWindow::buildQuickPaletteButtons() -> std::vector<xoj::gui::QuickPaletteButton> {
+    ToolHandler* handler = this->control->getToolHandler();
+    Settings* settings = this->control->getSettings();
+
+    xoj::gui::QuickPaletteSlotsInput input;
+    input.currentTool = handler != nullptr ? handler->getToolType() : TOOL_NONE;
+    // This tree keeps no record of the tool the user had before this one, so there is nothing to
+    // offer to go back to; the slot exists and is tested, the source does not exist here yet.
+    input.previousTool = TOOL_NONE;
+    input.favorites = settings != nullptr ? &settings->getToolPresets() : nullptr;
+
+    std::vector<xoj::gui::QuickPaletteButton> buttons;
+    for (const xoj::gui::QuickPaletteSlot& slot: xoj::gui::buildQuickPaletteSlots(input)) {
+        xoj::gui::QuickPaletteButton button;
+        button.id = slot.id;
+
+        switch (slot.kind) {
+            case xoj::gui::QuickPaletteSlot::Kind::Undo:
+                button.label = _("Undo");
+                button.actionName = std::string("win.") + Action_toString(Action::UNDO);
+                break;
+            case xoj::gui::QuickPaletteSlot::Kind::Favorite: {
+                // A preset is applied through the preset adapter, the same path the toolbar's
+                // favourite items take; there is no action carrying a preset id.
+                button.label = slot.name;
+                const std::string presetId = slot.presetId;
+                button.onActivate = [this, presetId]() {
+                    ToolConfigAdapter* adapter = this->control->getToolConfigAdapter();
+                    const ToolPreset* preset = this->control->getSettings()->getToolPresets().findById(presetId);
+                    if (adapter != nullptr && preset != nullptr) {
+                        adapter->applyPreset(*preset);
+                    }
+                };
+                break;
+            }
+            default:
+                // Tool slots go through the same action the toolbar's tool buttons use, with the
+                // tool type as the parameter, so selection takes the normal path.
+                button.label = quickPaletteToolLabel(slot.toolType);
+                button.actionName = std::string("win.") + Action_toString(Action::SELECT_TOOL);
+                button.parameter = g_variant_new_uint64(static_cast<guint64>(slot.toolType));
+                break;
+        }
+
+        buttons.push_back(std::move(button));
+    }
+    return buttons;
+}
+
 
 void MainWindow::setDPI() const {
     if (auto dpi = this->getControl()->getSettings()->getDisplayDpi(); dpi == -1) {

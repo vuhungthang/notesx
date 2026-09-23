@@ -22,14 +22,15 @@
 #include <glib.h>         // for gpointer, gboolean, gint
 #include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
-#include "control/DocumentSafetyState.h"     // for SafetySnapshot
+#include "control/DocumentSafetyState.h"       // for SafetySnapshot
 #include "control/commands/CommandRegistry.h"  // for CommandRegistry, the commands the palette lists
-#include "control/settings/SettingsEnums.h"  // for WorkspaceMode
-#include "dashboard/DashboardModel.h"        // for DashboardModel
-#include "dashboard/DashboardPage.h"         // for DashboardPage
-#include "dashboard/FileWatcher.h"           // for FileWatcher
-#include "dashboard/ThumbnailService.h"      // for ThumbnailService
-#include "gui/dashboard/SurfaceStack.h"      // for SurfaceStack
+#include "control/settings/SettingsEnums.h"    // for WorkspaceMode
+#include "dashboard/DashboardModel.h"          // for DashboardModel
+#include "dashboard/DashboardPage.h"           // for DashboardPage
+#include "dashboard/FileWatcher.h"             // for FileWatcher
+#include "dashboard/ThumbnailService.h"        // for ThumbnailService
+#include "gui/QuickPalette.h"                  // for QuickPalette, QuickPaletteButton (Plan 008)
+#include "gui/dashboard/SurfaceStack.h"        // for SurfaceStack
 #include "util/Point.h"
 #include "util/raii/GObjectSPtr.h"
 
@@ -56,6 +57,7 @@ class CommandPalette;
 }
 
 namespace xoj::gui {
+class QuickPalette;
 class WorkspaceGuidance;
 class ShortcutReference;
 class TipService;
@@ -110,6 +112,21 @@ public:
 
     PdfFloatingToolbox* getPdfToolbox() const;
     FloatingToolbox* getFloatingToolbox() const;
+
+    /**
+     * Plan 008: the quick palette - the surface the stylus summons instead of the Classic
+     * floating toolbox when the gesture preferences say so.
+     */
+    xoj::gui::QuickPalette* getQuickPalette() const;
+
+    /**
+     * Plan 008: show the quick palette near a point, in the window's coordinates.
+     *
+     * The contents are read here, at the moment it is summoned, from the tool handler and the
+     * shared favourites: the line-up follows whatever the user's favourites are now, and the tool
+     * it offers to return to is the one they are on now.
+     */
+    void showQuickPaletteAt(int x, int y);
 
     void updateScrollbarSidebarPosition();
 
@@ -297,6 +314,11 @@ private:
 
     std::unique_ptr<PdfFloatingToolbox> pdfFloatingToolBox;
     std::unique_ptr<FloatingToolbox> floatingToolbox;
+    /// Plan 008: the quick palette, in the same overlay as the floating toolbox it can replace.
+    std::unique_ptr<xoj::gui::QuickPalette> quickPalette;
+
+    /// Build the palette's buttons from the current tool and the shared favourite presets.
+    auto buildQuickPaletteButtons() -> std::vector<xoj::gui::QuickPaletteButton>;
 
     // Toolbars
     std::unique_ptr<ToolMenuHandler> toolbar;
