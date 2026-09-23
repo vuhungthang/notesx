@@ -184,8 +184,9 @@ struct Recorder {
     std::vector<std::pair<fs::path, bool>> foldersRecursive;
     int addedFolder = 0;
     int newNotes = 0;
-    int quickNotes = 0;
     int pdfs = 0;
+    int quickNotes = 0;
+    int filesOpened = 0;
     int backs = 0;
     std::vector<RecoveryCard> recoveryOpened;
     std::vector<RecoveryCard> recoverySavedAs;
@@ -208,8 +209,9 @@ struct Recorder {
             this->foldersRecursive.emplace_back(path, value);
         };
         callbacks.newNote = [this]() { this->newNotes++; };
-        callbacks.quickNote = [this]() { this->quickNotes++; };
         callbacks.annotatePdf = [this]() { this->pdfs++; };
+        callbacks.quickNote = [this]() { this->quickNotes++; };
+        callbacks.openFile = [this]() { this->filesOpened++; };
         callbacks.openRecovery = [this](const RecoveryCard& card) { this->recoveryOpened.emplace_back(card); };
         callbacks.saveRecoveryAs = [this](const RecoveryCard& card) { this->recoverySavedAs.emplace_back(card); };
         callbacks.revealRecovery = [this](const RecoveryCard& card) { this->recoveryRevealed.emplace_back(card); };
@@ -355,7 +357,7 @@ class DashboardPageEmptyStateTest: public GtkTest {
 
             // Templates is the one section that is never empty: it is the ways to start something.
             if (section == DashboardSection::Templates) {
-                for (const char* button: {"new-note", "quick-note", "annotate-pdf", "add-folder"}) {
+                for (const char* button: {"new-note", "open-file", "quick-note", "annotate-pdf", "add-folder"}) {
                     GtkWidget* widget = page.getButton(button);
                     ASSERT_NE(widget, nullptr) << button << " is always offered";
                     EXPECT_TRUE(gtk_widget_get_visible(widget));
@@ -455,6 +457,7 @@ class DashboardPageCardActionsTest: public GtkTest {
         // The ways to start something new ask for exactly that and nothing else.
         for (const auto& [button, count]:
              std::vector<std::pair<const char*, int*>>{{"new-note", &recorder.newNotes},
+                                                       {"open-file", &recorder.filesOpened},
                                                        {"quick-note", &recorder.quickNotes},
                                                        {"annotate-pdf", &recorder.pdfs},
                                                        {"add-folder", &recorder.addedFolder}}) {

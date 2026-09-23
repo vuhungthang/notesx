@@ -56,10 +56,12 @@ public:
         std::function<void(const fs::path&)> removeFolder;
         /// List (or stop listing) a folder's subtree.
         std::function<void(const fs::path&, bool)> setFolderRecursive;
-        /// Start something new.
+        /// Start something new, or open something the user already has (File > Open).
         std::function<void()> newNote;
-        std::function<void()> quickNote;
         std::function<void()> annotatePdf;
+        /// A note started without choosing anything, for writing something down right away.
+        std::function<void()> quickNote;
+        std::function<void()> openFile;
         /// What to do with a recovery copy.
         std::function<void(const RecoveryCard&)> openRecovery;
         std::function<void(const RecoveryCard&)> saveRecoveryAs;
@@ -203,8 +205,9 @@ private:
         RevealRecovery,
         DeleteRecovery,
         NewNote,
-        QuickNote,
         AnnotatePdf,
+        QuickNote,
+        OpenFile,
         AddFolder,
         RemoveFolder,
         ToggleRecursive,

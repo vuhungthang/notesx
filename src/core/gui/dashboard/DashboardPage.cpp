@@ -645,6 +645,7 @@ void DashboardPage::buildTemplates(GtkWidget* box) {
 
     const ActionButton entries[] = {
             {"new-note", _("New note"), _("Start a blank note"), Action::NewNote},
+            {"open-file", _("Open file"), _("Open a note or a PDF you already have"), Action::OpenFile},
             {"quick-note", _("Quick note"), _("Write something down without choosing a file first"), Action::QuickNote},
             {"annotate-pdf", _("Annotate PDF"), _("Open a PDF to write on"), Action::AnnotatePdf},
             {"add-folder", _("Add folder"), _("List the notes in a folder on this page"), Action::AddFolder},
@@ -835,6 +836,11 @@ void DashboardPage::run(const ItemData& item) {
         case Action::NewNote:
             if (this->callbacks.newNote) {
                 this->callbacks.newNote();
+            }
+            break;
+        case Action::OpenFile:
+            if (this->callbacks.openFile) {
+                this->callbacks.openFile();
             }
             break;
         case Action::QuickNote:
