@@ -16,10 +16,19 @@ struct KeyName {
 };
 
 constexpr KeyName KEY_NAMES[] = {
-        {"plus", "+"},      {"minus", "-"},     {"equal", "="},        {"kp_add", "Num +"},
-        {"kp_subtract", "Num -"}, {"kp_multiply", "Num *"}, {"kp_divide", "Num /"},
-        {"kp_enter", "Num Enter"}, {"page_up", "PageUp"},   {"page_down", "PageDown"},
-        {"return", "Enter"},       {"escape", "Esc"},       {"space", "Space"},
+        {"plus", "+"},
+        {"minus", "-"},
+        {"equal", "="},
+        {"kp_add", "Num +"},
+        {"kp_subtract", "Num -"},
+        {"kp_multiply", "Num *"},
+        {"kp_divide", "Num /"},
+        {"kp_enter", "Num Enter"},
+        {"page_up", "PageUp"},
+        {"page_down", "PageDown"},
+        {"return", "Enter"},
+        {"escape", "Esc"},
+        {"space", "Space"},
 };
 
 auto lower(std::string text) -> std::string {

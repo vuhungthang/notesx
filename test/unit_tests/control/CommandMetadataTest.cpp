@@ -58,8 +58,8 @@ auto rankedIds(const std::vector<CommandMetadata>& commands, const std::string& 
 }  // namespace
 
 TEST(CommandMetadataTest, testACompleteRegistryHasNoProblem) {
-    std::vector<CommandMetadata> commands{command("save", "Save", "File"), command("export-as-pdf", "Export as PDF",
-                                                                                  "File", "Ctrl+E")};
+    std::vector<CommandMetadata> commands{command("save", "Save", "File"),
+                                          command("export-as-pdf", "Export as PDF", "File", "Ctrl+E")};
     EXPECT_TRUE(xoj::command::validateCommands(commands).empty());
 }
 
@@ -120,8 +120,8 @@ TEST(CommandMetadataTest, testAKeywordMatchesAndRanksBelowATitle) {
 }
 
 TEST(CommandMetadataTest, testACategoryMatches) {
-    std::vector<CommandMetadata> commands{command("save", "Save", "File"), command("grid-snapping", "Grid Snapping",
-                                                                                  "View")};
+    std::vector<CommandMetadata> commands{command("save", "Save", "File"),
+                                          command("grid-snapping", "Grid Snapping", "View")};
 
     EXPECT_EQ(rankedIds(commands, "view"), (std::vector<std::string>{"grid-snapping"}));
 }

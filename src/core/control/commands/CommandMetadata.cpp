@@ -99,18 +99,15 @@ auto tokenScore(const CommandMetadata& command, const std::string& foldedTitle, 
                 const std::string& token) -> int {
     int best = scoreWords(splitWords(foldedTitle), token, SCORE_TITLE_WORD, SCORE_TITLE_CONTAINS);
     for (const std::string& keyword: command.keywords) {
-        best = std::max(best,
-                        scoreWords(splitWords(foldedForSearch(keyword)), token, SCORE_KEYWORD_WORD,
-                                   SCORE_KEYWORD_CONTAINS));
+        best = std::max(best, scoreWords(splitWords(foldedForSearch(keyword)), token, SCORE_KEYWORD_WORD,
+                                         SCORE_KEYWORD_CONTAINS));
     }
     best = std::max(best, scoreWords(splitWords(foldedCategory), token, SCORE_CATEGORY_WORD, SCORE_CATEGORY_CONTAINS));
     best = std::max(best, subsequenceScore(foldedTitle, token));
     return best;
 }
 
-auto tokenize(const std::string& folded) -> std::vector<std::string> {
-    return splitWords(folded);
-}
+auto tokenize(const std::string& folded) -> std::vector<std::string> { return splitWords(folded); }
 
 }  // namespace
 
@@ -215,8 +212,9 @@ auto rankCommands(const std::vector<CommandMetadata>& commands, std::string_view
 
     // Stable, so that two commands the query fits equally well stay in the order the user's menus
     // put them in rather than in an order of their own.
-    std::stable_sort(scored.begin(), scored.end(),
-                     [](const std::pair<size_t, int>& a, const std::pair<size_t, int>& b) { return a.second > b.second; });
+    std::stable_sort(
+            scored.begin(), scored.end(),
+            [](const std::pair<size_t, int>& a, const std::pair<size_t, int>& b) { return a.second > b.second; });
 
     order.reserve(scored.size());
     for (const auto& [index, score]: scored) {
