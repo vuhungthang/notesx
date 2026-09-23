@@ -7,6 +7,18 @@
     <property name="value">1</property>
     <property name="step-increment">0.10</property>
   </object>
+  <object class="GtkAdjustment" id="adjustmentGestureCircleConfidence">
+    <property name="upper">1</property>
+    <property name="value">0.5</property>
+    <property name="step-increment">0.05</property>
+    <property name="page-increment">0.10</property>
+  </object>
+  <object class="GtkAdjustment" id="adjustmentGestureScribbleConfidence">
+    <property name="upper">1</property>
+    <property name="value">0.5</property>
+    <property name="step-increment">0.05</property>
+    <property name="page-increment">0.10</property>
+  </object>
   <object class="GtkAdjustment" id="adjustmentCursorHighlightBorderWidth">
     <property name="upper">30</property>
     <property name="step-increment">1</property>
@@ -6768,6 +6780,175 @@ If available select &lt;small&gt;&lt;tt&gt;pulse&lt;/tt&gt;&lt;/small&gt; as inp
               <packing>
                 <property name="position">12</property>
                 <property name="tab-fill">False</property>
+              </packing>
+            </child>
+            <child type="tab">
+              <object class="GtkLabel" id="gestureTabLabel">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="label" translatable="yes">Gestures</property>
+              </object>
+              <packing>
+                <property name="position">13</property>
+                <property name="tab-fill">False</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow" id="gestureTabBox">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="hscrollbar-policy">never</property>
+                <child>
+                  <object class="GtkViewport" id="gestureTabViewport">
+                    <property name="visible">True</property>
+                    <property name="can-focus">False</property>
+                    <child>
+                      <object class="GtkFrame" id="frameGestureSettings">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Stylus gestures</property>
+                        <child>
+                          <object class="GtkAlignment" id="gestureSettingsAlignment">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <child>
+                              <object class="GtkGrid" id="gestureSettingsLayout">
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="row-spacing">6</property>
+                                <property name="column-spacing">12</property>
+                                <child>
+                                  <object class="GtkCheckButton" id="cbGestureQuickPalette">
+                                    <property name="label" translatable="yes">Quick palette (bind a stylus button, or press Ctrl+Shift+M)</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="tooltip-text" translatable="yes">The palette of nearby tools is only reachable where you ask for it. Bind a stylus button to it, or use its keyboard shortcut; with this off it cannot be summoned at all.</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">0</property>
+                                    <property name="width">2</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="cbGestureCircleToSelect">
+                                    <property name="label" translatable="yes">Circle to select</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="tooltip-text" translatable="yes">A circle drawn around elements selects what it encloses, as one undoable step. The circle is not left as ink. Off by default: turning it on has not been validated against ordinary handwriting.</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">1</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkSpinButton" id="spGestureCircleConfidence">
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="sensitive">False</property>
+                                    <property name="tooltip-text" translatable="yes">How sure the circle must be before it is acted on, from 0 to 1. It can only make the gesture harder to trigger, never easier.</property>
+                                    <property name="adjustment">adjustmentGestureCircleConfidence</property>
+                                    <property name="digits">2</property>
+                                    <property name="numeric">True</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">1</property>
+                                    <property name="top-attach">1</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel" id="lbGestureCircleDemo">
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="xalign">0</property>
+                                    <property name="use-markup">True</property>
+                                    <property name="label" translatable="yes">&lt;i&gt;Example: draw one closed loop around two strokes, lifting the pen in between only if you must. You see the candidate first; nothing is selected until you confirm it.&lt;/i&gt;</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">2</property>
+                                    <property name="width">2</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="cbGestureScribbleToErase">
+                                    <property name="label" translatable="yes">Scribble to erase</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="tooltip-text" translatable="yes">Scribbling over strokes removes whole strokes that it covers, as one undoable step. Shading or crossing something out stays ink. Off by default.</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">3</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkSpinButton" id="spGestureScribbleConfidence">
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="sensitive">False</property>
+                                    <property name="tooltip-text" translatable="yes">How sure the scribble must be before it is acted on, from 0 to 1. It can only make the gesture harder to trigger, never easier.</property>
+                                    <property name="adjustment">adjustmentGestureScribbleConfidence</property>
+                                    <property name="digits">2</property>
+                                    <property name="numeric">True</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">1</property>
+                                    <property name="top-attach">3</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel" id="lbGestureScribbleDemo">
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="xalign">0</property>
+                                    <property name="use-markup">True</property>
+                                    <property name="label" translatable="yes">&lt;i&gt;Example: back and forth over the strokes you want gone, covering them. Only whole covered strokes are erased, and one Undo brings them all back.&lt;/i&gt;</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">4</property>
+                                    <property name="width">2</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="cbGestureFeedback">
+                                    <property name="label" translatable="yes">Say so after the first gesture</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="tooltip-text" translatable="yes">The first time a gesture acts, a short notice says which gesture it was and that it can be undone, and offers to turn that gesture off. Every notice is tied to an undo record.</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">5</property>
+                                    <property name="width">2</property>
+                                  </packing>
+                                </child>
+                                <child>
+                                  <object class="GtkButton" id="btGestureReset">
+                                    <property name="label" translatable="yes">Reset gesture settings to defaults</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="tooltip-text" translatable="yes">Puts every gesture preference back to its conservative default, where the destructive gestures are off. Nothing is stored until you save the preferences.</property>
+                                  </object>
+                                  <packing>
+                                    <property name="left-attach">0</property>
+                                    <property name="top-attach">6</property>
+                                    <property name="width">2</property>
+                                  </packing>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+              <packing>
+                <property name="position">13</property>
               </packing>
             </child>
           </object>

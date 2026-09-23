@@ -18,7 +18,8 @@
 #include <gtk/gtk.h>  // for GtkWidget, GtkWindow
 
 #include "audio/DeviceInfo.h"                    // for DeviceInfo
-#include "control/settings/SettingsEnums.h"     // for WorkspaceMode
+#include "control/gestures/GestureSettings.h"    // for GestureSettings (Plan 008, step 2)
+#include "control/settings/SettingsEnums.h"      // for WorkspaceMode
 #include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
 #include "gui/Builder.h"
 #include "util/raii/GtkWindowUPtr.h"
@@ -81,6 +82,21 @@ private:
     void load();
     void loadCheckbox(const char* name, bool value);
     bool getCheckbox(const char* name);
+
+    /**
+     * Plan 008, step 2: the gesture preferences.
+     *
+     * The widgets carry a value each and are read back on save. The two confidence fields are only
+     * meaningful for a gesture that is on, so they follow their own toggle rather than sitting
+     * there editable while doing nothing. The reset button puts the widget values back to the
+     * conservative defaults without touching the profile: nothing is stored until the dialog is
+     * saved, exactly as the other pages behave.
+     */
+    void showGestureSettings(const xoj::gesture::GestureSettings& gesture);
+    void loadGestureSettings();
+    void saveGestureSettings();
+    void updateGestureSensitivity();
+    void resetGestureSettingsToDefaults();
 
     void loadSlider(const char* name, double value);
     double getSlider(const char* name);

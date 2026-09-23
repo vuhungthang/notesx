@@ -30,11 +30,11 @@
 #include "util/safe_casts.h"                        // for round_cast
 #include "util/utf8_view.h"                         // for utf8
 
-#include "ButtonConfigGui.h"       // for ButtonConfigGui
-#include "DeviceTestingArea.h"     // for DeviceTestingArea
-#include "LanguageConfigGui.h"     // for LanguageConfigGui
-#include "LatexSettingsPanel.h"    // for LatexSettingsPanel
-#include "filesystem.h"            // for is_directory
+#include "ButtonConfigGui.h"     // for ButtonConfigGui
+#include "DeviceTestingArea.h"   // for DeviceTestingArea
+#include "LanguageConfigGui.h"   // for LanguageConfigGui
+#include "LatexSettingsPanel.h"  // for LatexSettingsPanel
+#include "filesystem.h"          // for is_directory
 
 class GladeSearchpath;
 
@@ -212,6 +212,19 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
                      }),
                      this);
 
+    /*
+     * Plan 008, step 2: the gesture page. The sensitivity of a gesture follows whether the gesture
+     * is on at all, and the reset button is a dialog-local action: it changes what the controls
+     * say, and the profile keeps its old value until the user saves.
+     */
+    for (const char* toggle: {"cbGestureCircleToSelect", "cbGestureScribbleToErase"}) {
+        g_signal_connect(builder.get(toggle), "toggled",
+                         G_CALLBACK(+[](GtkCheckButton*, SettingsDialog* self) { self->updateGestureSensitivity(); }),
+                         this);
+    }
+    g_signal_connect_swapped(builder.get("btGestureReset"), "clicked",
+                             G_CALLBACK(+[](SettingsDialog* self) { self->resetGestureSettingsToDefaults(); }), this);
+
     load();
 }
 
@@ -247,6 +260,46 @@ void SettingsDialog::setDpi(int dpi) {
 
 void SettingsDialog::loadCheckbox(const char* name, bool value) {
     gtk_check_button_set_active(GTK_CHECK_BUTTON(builder.get(name)), value);
+}
+
+void SettingsDialog::showGestureSettings(const xoj::gesture::GestureSettings& gesture) {
+    loadCheckbox("cbGestureQuickPalette", gesture.quickPaletteEnabled);
+    loadCheckbox("cbGestureCircleToSelect", gesture.circleToSelectEnabled);
+    loadCheckbox("cbGestureScribbleToErase", gesture.scribbleToEraseEnabled);
+    loadCheckbox("cbGestureFeedback", gesture.feedbackEnabled);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("spGestureCircleConfidence")), gesture.circleConfidenceFloor);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("spGestureScribbleConfidence")),
+                              gesture.scribbleConfidenceFloor);
+    this->updateGestureSensitivity();
+}
+
+void SettingsDialog::loadGestureSettings() { this->showGestureSettings(this->settings->getGestureSettings()); }
+
+void SettingsDialog::updateGestureSensitivity() {
+    gtk_widget_set_sensitive(builder.get("spGestureCircleConfidence"), getCheckbox("cbGestureCircleToSelect"));
+    gtk_widget_set_sensitive(builder.get("spGestureScribbleConfidence"), getCheckbox("cbGestureScribbleToErase"));
+}
+
+void SettingsDialog::resetGestureSettingsToDefaults() {
+    this->showGestureSettings(xoj::gesture::GestureSettings::defaults());
+}
+
+void SettingsDialog::saveGestureSettings() {
+    /*
+     * Read the profile back and change only what this page shows. The touch tap slot is not on this
+     * page: it is off for good (Plan 008, step 6 stop condition), and writing it from a control the
+     * dialog does not offer would be inventing a value.
+     */
+    xoj::gesture::GestureSettings gesture = this->settings->getGestureSettings();
+    gesture.quickPaletteEnabled = getCheckbox("cbGestureQuickPalette");
+    gesture.circleToSelectEnabled = getCheckbox("cbGestureCircleToSelect");
+    gesture.scribbleToEraseEnabled = getCheckbox("cbGestureScribbleToErase");
+    gesture.feedbackEnabled = getCheckbox("cbGestureFeedback");
+    gesture.circleConfidenceFloor =
+            gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spGestureCircleConfidence")));
+    gesture.scribbleConfidenceFloor =
+            gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spGestureScribbleConfidence")));
+    this->settings->setGestureSettings(gesture);
 }
 
 auto SettingsDialog::getCheckbox(const char* name) -> bool {
@@ -651,10 +704,10 @@ void SettingsDialog::load() {
 
     // Plan 002: the workspace radio group. Focusing the active radio also leaves the
     // "Show Menubar on Startup" checkbox at the active workspace's preference.
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(builder.get(getWorkspaceMode() == WorkspaceMode::CLASSIC ?
-                                                                        "rdWorkspaceClassic" :
-                                                                        "rdWorkspaceFocus")),
-                                 true);
+    gtk_toggle_button_set_active(
+            GTK_TOGGLE_BUTTON(builder.get(getWorkspaceMode() == WorkspaceMode::CLASSIC ? "rdWorkspaceClassic" :
+                                                                                         "rdWorkspaceFocus")),
+            true);
 
     // Plan 007, step 4: the one switch over the workspace explanation and the tips, next to the
     // button that forgets what has been shown.
@@ -771,6 +824,8 @@ void SettingsDialog::load() {
 
     this->latexPanel.load(settings->latexSettings);
     paletteTab.renderPaletteTab(this->control->getPalette().getFilePath());
+    // Plan 008, step 2: the gesture page shows the profile's gesture preferences.
+    this->loadGestureSettings();
 }
 
 void SettingsDialog::save() {
@@ -1145,6 +1200,9 @@ void SettingsDialog::save() {
     if (selectedPalette.has_value()) {
         settings->setColorPaletteSetting(selectedPalette.value());
     }
+
+    // Plan 008, step 2: what the gesture page says becomes what the profile holds.
+    this->saveGestureSettings();
 
     this->deviceTestingArea->saveSettings();
 
