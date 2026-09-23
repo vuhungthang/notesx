@@ -684,6 +684,11 @@ void Control::customizeToolbars() {
     }
 }
 
+void Control::showCommandPalette() {
+    xoj_assert(this->win != nullptr);
+    this->win->showCommandPalette();
+}
+
 void Control::setToolDrawingType(DrawingType type) {
     if (this->toolHandler->getDrawingType() != type) {
 

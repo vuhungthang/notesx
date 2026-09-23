@@ -18,10 +18,10 @@
 #include <gio/gio.h>  // for GMenu, GSimpleAction, GSimpleActionGroup
 #include <gtest/gtest.h>
 
-#include "control/commands/CommandRegistry.h"       // for CommandRegistry, CommandEntry
-#include "enums/Action.enum.h"                      // for Action
-#include "gui/toolbarMenubar/AbstractToolItem.h"    // for AbstractToolItem
-#include "util/raii/GObjectSPtr.h"                  // for GObjectSPtr
+#include "control/commands/CommandRegistry.h"     // for CommandRegistry, CommandEntry
+#include "enums/Action.enum.h"                    // for Action
+#include "gui/toolbarMenubar/AbstractToolItem.h"  // for AbstractToolItem
+#include "util/raii/GObjectSPtr.h"                // for GObjectSPtr
 
 /*
  * Plan 007, step 1: where the commands come from.
@@ -92,8 +92,8 @@ struct ActionMap {
     /// parameter at all, which is what an action like app.quit is.
     ActionMap(std::string name, std::string initialState = {}, bool enabled = true) {
         group.reset(g_simple_action_group_new(), xoj::util::adopt);
-        action = initialState.empty() ? g_simple_action_new(name.c_str(), nullptr)
-                                      : g_simple_action_new_stateful(name.c_str(), G_VARIANT_TYPE_STRING,
+        action = initialState.empty() ? g_simple_action_new(name.c_str(), nullptr) :
+                                        g_simple_action_new_stateful(name.c_str(), G_VARIANT_TYPE_STRING,
                                                                      g_variant_new_string(initialState.c_str()));
         g_object_ref(action);
         g_simple_action_set_enabled(action, enabled);
@@ -125,10 +125,10 @@ TEST(CommandRegistryTest, testEveryMenuEntryBecomesACommand) {
     g_menu_append_item(file.get(), itemWithAccel("Open", "win.open", "<Ctrl>o"));
     xoj::util::GObjectSPtr<GMenu> edit(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(edit.get(), item("Undo", "win.undo"));
-    xoj::util::GObjectSPtr<GMenuItem> fileSub( g_menu_item_new_submenu("_File", G_MENU_MODEL(file.get())),
+    xoj::util::GObjectSPtr<GMenuItem> fileSub(g_menu_item_new_submenu("_File", G_MENU_MODEL(file.get())),
                                               xoj::util::adopt);
     xoj::util::GObjectSPtr<GMenuItem> editSub(g_menu_item_new_submenu("_Edit", G_MENU_MODEL(edit.get())),
-                                             xoj::util::adopt);
+                                              xoj::util::adopt);
     xoj::util::GObjectSPtr<GMenu> root(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(root.get(), fileSub.get());
     g_menu_append_item(root.get(), editSub.get());
@@ -159,9 +159,9 @@ TEST(CommandRegistryTest, testTheMenuIsWalkedThroughItsSectionsAndSubmenus) {
     xoj::util::GObjectSPtr<GMenu> section(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(section.get(), item("Save", "win.save"));
     xoj::util::GObjectSPtr<GMenuItem> sectionLink(g_menu_item_new_section(nullptr, G_MENU_MODEL(section.get())),
-                                                 xoj::util::adopt);
+                                                  xoj::util::adopt);
     xoj::util::GObjectSPtr<GMenuItem> recentLink(g_menu_item_new_submenu("Recent", G_MENU_MODEL(recent.get())),
-                                                xoj::util::adopt);
+                                                 xoj::util::adopt);
     xoj::util::GObjectSPtr<GMenu> file(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(file.get(), sectionLink.get());
     g_menu_append_item(file.get(), recentLink.get());
@@ -324,7 +324,14 @@ TEST(CommandRegistryTest, testAToolbarItemContributesItsActionAndTarget) {
     EXPECT_NE(registry.findById("win.select-tool:SELECT_REGION"), nullptr);
 }
 
-TEST(CommandRegistryTest, testAnItemAndAMenuEntryOnOneActionBothGetTheirOwnId) {
+/*
+ * The same action with the same target, offered once by a menu entry and once by the tool button
+ * that reaches it, is one command. Two rows for one command would make the palette list "Undo"
+ * twice and would make the shortcut reference report an accelerator conflict of a command with
+ * itself. The menu is read first, so its label is the one the user reads; the icon that only the
+ * tool button knows is kept rather than dropped.
+ */
+TEST(CommandRegistryTest, testAMenuEntryAndItsToolButtonAreOneCommand) {
     xoj::util::GObjectSPtr<GMenu> tools(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(tools.get(), item("Select Region", "win.select-tool('select-region')"));
     xoj::util::GObjectSPtr<GMenuItem> toolsSub(g_menu_item_new_submenu("Tools", G_MENU_MODEL(tools.get())),
@@ -333,16 +340,58 @@ TEST(CommandRegistryTest, testAnItemAndAMenuEntryOnOneActionBothGetTheirOwnId) {
     g_menu_append_item(root.get(), toolsSub.get());
 
     std::vector<std::unique_ptr<AbstractToolItem>> items;
-    items.emplace_back(std::make_unique<StubToolItem>("SELECT_REGION", AbstractToolItem::Category::SELECTION,
-                                                      "Select Region", Action::SELECT_TOOL,
-                                                      g_variant_new_string("select-region")));
+    items.emplace_back(std::make_unique<StubToolItem>(
+            "SELECT_REGION", AbstractToolItem::Category::SELECTION, "Select Region", Action::SELECT_TOOL,
+            g_variant_new_string("select-region"), "xopp-tool-select-region"));
 
     CommandRegistry registry;
     registry.addFromMenuModel(G_MENU_MODEL(root.get()));
     registry.addFromToolItems(items);
 
-    EXPECT_EQ(registry.all().size(), 2u);
-    EXPECT_TRUE(registry.problems().empty()) << registry.problems().front();
+    ASSERT_EQ(registry.all().size(), 1u) << "one action with one target is one command";
+    EXPECT_EQ(registry.all()[0].metadata.id, "win.select-tool('select-region')")
+            << "the menu entry arrived first, so its id and its label are the command's";
+    EXPECT_EQ(registry.all()[0].metadata.category, "Tools");
+    EXPECT_EQ(registry.all()[0].metadata.icon, "xopp-tool-select-region")
+            << "the icon only the tool button carries is kept";
+    EXPECT_EQ(registry.findById("win.select-tool:SELECT_REGION"), nullptr)
+            << "the tool button has no id of its own once the menu entry is its command";
+}
+
+TEST(CommandRegistryTest, testOneActionWithTwoTargetsStaysTwoCommands) {
+    std::vector<std::unique_ptr<AbstractToolItem>> items;
+    items.emplace_back(std::make_unique<StubToolItem>("PEN", AbstractToolItem::Category::TOOLS, "Pen",
+                                                      Action::SELECT_TOOL, g_variant_new_string("pen")));
+    items.emplace_back(std::make_unique<StubToolItem>("HIGHLIGHTER", AbstractToolItem::Category::TOOLS, "Highlighter",
+                                                      Action::SELECT_TOOL, g_variant_new_string("highlighter")));
+    // The same item as the first one: same action, same target, so it adds nothing.
+    items.emplace_back(std::make_unique<StubToolItem>("PEN_AGAIN", AbstractToolItem::Category::TOOLS, "Pen",
+                                                      Action::SELECT_TOOL, g_variant_new_string("pen")));
+
+    CommandRegistry registry;
+    registry.addFromToolItems(items);
+
+    ASSERT_EQ(registry.all().size(), 2u);
+    EXPECT_NE(CommandRegistry::commandKey(registry.all()[0]), CommandRegistry::commandKey(registry.all()[1]));
+    EXPECT_EQ(registry.findById("win.select-tool:PEN_AGAIN"), nullptr)
+            << "the second item on the same action and target added nothing";
+}
+
+TEST(CommandRegistryTest, testAnActionOfTwoMapsIsTwoCommands) {
+    CommandRegistry registry;
+    for (const auto scope: {ActionScope::WINDOW, ActionScope::APPLICATION}) {
+        xoj::command::CommandEntry entry;
+        entry.metadata.id = scope == ActionScope::APPLICATION ? "app.save" : "win.save";
+        entry.metadata.title = "Save";
+        entry.metadata.category = "File";
+        entry.metadata.actionName = "win.save";
+        entry.action = "save";
+        entry.scope = scope;
+        registry.addCommand(std::move(entry));
+    }
+
+    EXPECT_EQ(ids(registry), (std::vector<std::string>{"win.save", "app.save"}))
+            << "the same name in two maps is two actions, and so two commands";
 }
 
 TEST(CommandRegistryTest, testTheExtensionPointTakesACommandOfItsOwn) {
@@ -362,7 +411,7 @@ TEST(CommandRegistryTest, testTheExtensionPointTakesACommandOfItsOwn) {
     EXPECT_TRUE(registry.problems().empty()) << registry.problems().front();
 }
 
-TEST(CommandRegistryTest, testTheSameIdTwiceIsAProblem) {
+TEST(CommandRegistryTest, testTheSameCommandTwiceIsOneCommand) {
     CommandRegistry registry;
     xoj::command::CommandEntry entry;
     entry.metadata.id = "win.save";
@@ -371,6 +420,28 @@ TEST(CommandRegistryTest, testTheSameIdTwiceIsAProblem) {
     entry.action = "save";
     registry.addCommand(entry);
     registry.addCommand(std::move(entry));
+
+    EXPECT_EQ(registry.all().size(), 1u) << "the same command offered twice is one command";
+    EXPECT_TRUE(registry.problems().empty()) << registry.problems().front();
+}
+
+/// Two different actions sharing one id are still a problem: that is what validateCommands() is for,
+/// and dedupe does not hide it - it only folds a command that is offered twice into one.
+TEST(CommandRegistryTest, testTwoCommandsWithOneIdAreAProblem) {
+    CommandRegistry registry;
+    xoj::command::CommandEntry save;
+    save.metadata.id = "win.save";
+    save.metadata.title = "Save";
+    save.metadata.category = "File";
+    save.action = "save";
+    registry.addCommand(std::move(save));
+
+    xoj::command::CommandEntry saveAs;
+    saveAs.metadata.id = "win.save";
+    saveAs.metadata.title = "Save as";
+    saveAs.metadata.category = "File";
+    saveAs.action = "save-as";
+    registry.addCommand(std::move(saveAs));
 
     auto problems = registry.problems();
     ASSERT_EQ(problems.size(), 1u);
@@ -497,12 +568,10 @@ TEST(CommandRegistryTest, testAnApplicationActionIsKnownLikeAnyOther) {
     xoj::util::GObjectSPtr<GMenu> root(g_menu_new(), xoj::util::adopt);
     g_menu_append_item(root.get(), item("Preferences", "app.preferences"));
 
-    CommandRegistry registry({}, {},
-                             [](const xoj::command::CommandEntry& entry) -> std::vector<std::string> {
-                                 return entry.knownAction == Action::PREFERENCES
-                                                ? std::vector<std::string>{"settings"}
-                                                : std::vector<std::string>{};
-                             });
+    CommandRegistry registry({}, {}, [](const xoj::command::CommandEntry& entry) -> std::vector<std::string> {
+        return entry.knownAction == Action::PREFERENCES ? std::vector<std::string>{"settings"} :
+                                                          std::vector<std::string>{};
+    });
     registry.addFromMenuModel(G_MENU_MODEL(root.get()));
 
     const auto* command = registry.findById("app.preferences");

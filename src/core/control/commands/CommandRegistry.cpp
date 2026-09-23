@@ -55,7 +55,7 @@ struct MenuAction {
     std::string id;         ///< the action attribute as written, plus a target when it has one of its own
     std::string qualified;  ///< "win.save"
     ActionScope scope = ActionScope::WINDOW;
-    std::string name;       ///< "save"
+    std::string name;  ///< "save"
     xoj::util::GVariantSPtr target;
     bool targetInName = false;
 };
@@ -145,7 +145,8 @@ void CommandRegistry::addMenuLevel(GMenuModel* model, const std::string& categor
             if (link == nullptr) {
                 continue;
             }
-            const bool namesItsOwnGroup = std::string_view(linkType) == G_MENU_LINK_SUBMENU && category.empty() && label;
+            const bool namesItsOwnGroup =
+                    std::string_view(linkType) == G_MENU_LINK_SUBMENU && category.empty() && label;
             addMenuLevel(link, namesItsOwnGroup ? stripMnemonics(*label) : category);
             g_object_unref(link);
         }
@@ -195,7 +196,7 @@ void CommandRegistry::addMenuLevel(GMenuModel* model, const std::string& categor
             entry.metadata.keywords = this->keywordLookup(entry);
         }
 
-        this->commands.emplace_back(std::move(entry));
+        this->appendCommand(std::move(entry));
     }
 }
 
@@ -231,11 +232,43 @@ void CommandRegistry::addFromToolItems(const std::vector<std::unique_ptr<Abstrac
             entry.metadata.keywords = this->keywordLookup(entry);
         }
 
-        this->commands.emplace_back(std::move(entry));
+        this->appendCommand(std::move(entry));
     }
 }
 
-void CommandRegistry::addCommand(CommandEntry entry) { this->commands.emplace_back(std::move(entry)); }
+void CommandRegistry::addCommand(CommandEntry entry) { this->appendCommand(std::move(entry)); }
+
+auto CommandRegistry::commandKey(const CommandEntry& entry) -> std::string {
+    std::string key = entry.scope == ActionScope::APPLICATION ? APPLICATION_NAMESPACE : WINDOW_NAMESPACE;
+    key += entry.action;
+    key += '\n';
+    if (entry.target) {
+        gchar* printed = g_variant_print(entry.target.get(), FALSE);
+        key += printed;
+        g_free(printed);
+    }
+    return key;
+}
+
+void CommandRegistry::appendCommand(CommandEntry entry) {
+    const std::string key = commandKey(entry);
+    for (CommandEntry& existing: this->commands) {
+        if (commandKey(existing) != key) {
+            continue;
+        }
+        /*
+         * The same action, run with the same target, offered a second time: typically the tool
+         * button that reaches a menu entry. The one that arrived first is the command - the menu is
+         * read before the toolbars - so what the user reads is the label of the menu entry, and what
+         * the twin knows and the kept command does not, its icon, is taken over rather than dropped.
+         */
+        if (existing.metadata.icon.empty()) {
+            existing.metadata.icon = entry.metadata.icon;
+        }
+        return;
+    }
+    this->commands.emplace_back(std::move(entry));
+}
 
 const std::vector<CommandEntry>& CommandRegistry::all() const { return this->commands; }
 

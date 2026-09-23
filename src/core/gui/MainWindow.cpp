@@ -21,6 +21,7 @@
 #include "dashboard/FileWatcher.h"                      // for FileWatcher
 #include "dashboard/RecoveryActions.h"                  // for the recovery file work
 #include "dashboard/ThumbnailCache.h"                   // for ThumbnailCache
+#include "gui/CommandPalette.h"                         // for CommandPalette (Plan 007)
 #include "gui/FloatingToolbox.h"                        // for FloatingToolbox
 #include "gui/GladeGui.h"                               // for GladeGui
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
@@ -196,7 +197,64 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
     applyWorkspaceChrome();
 
     setToolbarVisible(control->getSettings()->isToolbarVisible());
+
+    // Plan 007: the palette, over the window it belongs to. Built here, once the editor and the
+    // toolbars it reads the commands from are there.
+    buildCommandPalette();
 }
+
+auto MainWindow::buildCommandRegistry() const -> xoj::command::CommandRegistry {
+    using xoj::command::CommandEntry;
+    using xoj::command::CommandRegistry;
+
+    GtkApplication* app = GTK_APPLICATION(gtk_window_get_application(GTK_WINDOW(this->getWindow())));
+    ActionDatabase* db = this->control->getActionDatabase();
+
+    CommandRegistry commands(
+            [app](const std::string& detailedActionName) -> std::vector<std::string> {
+                std::vector<std::string> accelerators;
+                gchar** held = gtk_application_get_accels_for_action(app, detailedActionName.c_str());
+                for (gchar** one = held; one != nullptr && *one != nullptr; one++) {
+                    accelerators.emplace_back(*one);
+                }
+                g_strfreev(held);
+                return accelerators;
+            },
+            [db](const CommandEntry& entry) -> std::optional<std::string> {
+                return entry.knownAction ? db->getDisabledReason(*entry.knownAction) : std::nullopt;
+            },
+            [db](const CommandEntry& entry) -> std::vector<std::string> {
+                return entry.knownAction ? db->getKeywords(*entry.knownAction) : std::vector<std::string>{};
+            });
+
+    commands.addFromMenuModel(this->getMenuModel());
+    commands.addFromToolItems(this->getToolMenuHandler()->getToolItems());
+    return commands;
+}
+
+void MainWindow::buildCommandPalette() {
+    using xoj::command::CommandPalette;
+    using xoj::command::CommandRegistry;
+
+    CommandRegistry::Maps maps;
+    maps.window = G_ACTION_MAP(this->getWindow());
+    GtkApplication* app = GTK_APPLICATION(gtk_window_get_application(GTK_WINDOW(this->getWindow())));
+    maps.application = app != nullptr ? G_ACTION_MAP(app) : nullptr;
+
+    this->commandPalette = std::make_unique<CommandPalette>(
+            GTK_WINDOW(this->getWindow()), this->xournal->getWidget(), this->control->getSettings(),
+            [this] { return this->buildCommandRegistry(); }, maps);
+}
+
+void MainWindow::showCommandPalette() {
+    if (this->commandPalette == nullptr) {
+        return;
+    }
+    // Ctrl+K again, while it is open, puts it away: the shortcut that opened it closes it.
+    this->commandPalette->toggle();
+}
+
+auto MainWindow::getCommandPalette() const -> xoj::command::CommandPalette* { return this->commandPalette.get(); }
 
 GMenuModel* MainWindow::getMenuModel() const { return menubar->getModel(); }
 

@@ -23,6 +23,7 @@
 #include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
 #include "control/DocumentSafetyState.h"     // for SafetySnapshot
+#include "control/commands/CommandRegistry.h"  // for CommandRegistry, the commands the palette lists
 #include "control/settings/SettingsEnums.h"  // for WorkspaceMode
 #include "dashboard/DashboardModel.h"        // for DashboardModel
 #include "dashboard/DashboardPage.h"         // for DashboardPage
@@ -49,6 +50,10 @@ class GladeSearchpath;
 class SafetyStatusBar;
 
 class Menubar;
+
+namespace xoj::command {
+class CommandPalette;
+}
 
 typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
 
@@ -170,6 +175,18 @@ public:
     /// Plan 006: the button that leads from the editor to the dashboard.
     [[maybe_unused]] auto getHomeButton() const -> GtkWidget*;
 
+    /**
+     * Plan 007: every command the application offers, read where it already lives - the menu model
+     * GTK built from ui/mainmenubar.xml, the toolbar items of the tool menu handler, the
+     * accelerators the application holds - and nothing written down a second time. The palette and
+     * the shortcut reference both read it, so neither can drift from what the application does.
+     */
+    auto buildCommandRegistry() const -> xoj::command::CommandRegistry;
+    /// Plan 007: show the command palette. Ctrl+K reaches this through the action of the same name.
+    void showCommandPalette();
+    /// Plan 007: the palette itself, so a test can press the keys a user would.
+    [[maybe_unused]] auto getCommandPalette() const -> xoj::command::CommandPalette*;
+
     /// Infer the window's DPI from available monitor info and use it to set the default zoom value.
     void setDPI() const;
 
@@ -178,6 +195,8 @@ private:
 
     /// Plan 006: the editor and the home surface as two pages of one stack.
     void buildSurfaceStack();
+    /// Plan 007: the palette, over the window it belongs to.
+    void buildCommandPalette();
     /// Plan 006: the dashboard's model, preview service and page, wired to the application.
     void buildDashboard();
     /// Read what the user has into the model and rebuild the page.
@@ -251,6 +270,9 @@ private:
     ToolbarData* selectedToolbar = nullptr;
 
     std::unique_ptr<Menubar> menubar;
+
+    /// Plan 007: the command palette, created once and shown and hidden from then on.
+    std::unique_ptr<xoj::command::CommandPalette> commandPalette;
 
     /// Plan 004: the document-safety row, directly under the top toolbars.
     std::unique_ptr<SafetyStatusBar> safetyStatusBar;

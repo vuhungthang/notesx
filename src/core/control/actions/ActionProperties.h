@@ -1000,6 +1000,20 @@ struct ActionProperties<Action::HELP> {
     static constexpr const char* keywords[] = {"manual", "documentation", nullptr};
 };
 
+/**
+ * Plan 007, step 2: the command palette.
+ *
+ * The shortcut is registered here rather than written on the menu entry so that the palette is
+ * reachable whatever the menubar is doing - hidden in the Focus workspace, or gone in a fullscreen
+ * presentation - and so that the reference reports the same accelerator the action actually has.
+ */
+template <>
+struct ActionProperties<Action::COMMAND_PALETTE> {
+    static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showCommandPalette(); }
+    static constexpr const char* accelerators[] = {"<Ctrl>K", nullptr};
+    static constexpr const char* keywords[] = {"palette", "run", "search commands", nullptr};
+};
+
 template <>
 struct ActionProperties<Action::DEMO> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showGtkDemo(); }

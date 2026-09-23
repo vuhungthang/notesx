@@ -96,6 +96,17 @@ public:
     /// What is wrong with the registry - ids, titles, categories. Empty when nothing is.
     auto problems() const -> std::vector<std::string>;
 
+    /**
+     * What makes two commands the same command: the action they run and the value it is run with,
+     * in the map they are looked up in.
+     *
+     * The same action with the same target offered from two places - the menu entry and the tool
+     * button that reaches it - is one command, not two, and it must be one however it is reached:
+     * the palette would otherwise list "Undo" twice, and the shortcut reference would report an
+     * accelerator conflict with itself.
+     */
+    static auto commandKey(const CommandEntry& entry) -> std::string;
+
     /// The GAction a command activates, or nullptr when its map does not hold one.
     static auto lookupAction(const CommandEntry& entry, const Maps& maps) -> GAction*;
     /// Whether the command can be run now. A command with no action cannot.
@@ -115,6 +126,8 @@ public:
 private:
     /// Walk one level of a menu model: items with an action become commands, links are followed.
     void addMenuLevel(GMenuModel* model, const std::string& category);
+    /// Add the command unless the action it runs is already there with the target it runs it with.
+    void appendCommand(CommandEntry entry);
 
     std::vector<CommandEntry> commands;
     AcceleratorLookup acceleratorLookup;

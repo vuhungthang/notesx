@@ -177,6 +177,9 @@ enum class Action : size_t {
     // Miscellaneous
     POSITION_HIGHLIGHTING,
 
+    // Plan 007: finding a command instead of navigating to it
+    COMMAND_PALETTE,
+
     // Keep this last value
     ENUMERATOR_COUNT
 };

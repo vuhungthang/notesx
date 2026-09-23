@@ -209,6 +209,10 @@ public:
 
     void manageToolbars();
     void customizeToolbars();
+
+    /// Plan 007: the command palette, which Ctrl+K opens and which runs its commands through the
+    /// actions the menus and the toolbars already use.
+    void showCommandPalette();
     void setFullscreen(bool enabled);
     void setShowSidebar(bool enabled);
     void setShowToolbar(bool enabled);

@@ -9,7 +9,7 @@
  * @license GNU GPLv2 or later
  */
 
-#include <algorithm>  // for find_if
+#include <algorithm>   // for find_if
 #include <functional>  // for function
 #include <memory>      // for unique_ptr, make_unique, make_shared
 #include <optional>
@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <gtk/gtk.h>  // for GtkApplication, GtkApplicationWindow
 
+#include "../dialog/GtkTest.h"
 #include "control/Control.h"                     // for Control
 #include "control/ToolHandler.h"                 // for ToolHandler
 #include "control/actions/ActionDatabase.h"      // for ActionDatabase
@@ -29,7 +30,6 @@
 #include "model/PageRef.h"                       // for PageRef
 #include "model/XojPage.h"                       // for XojPage
 
-#include "../dialog/GtkTest.h"
 #include "config-test.h"
 
 /*
@@ -183,10 +183,33 @@ void realMenuIsComplete(ApplicationCommands& test) {
     EXPECT_EQ(exportPdf->metadata.title, "Export as PDF");
     EXPECT_EQ(exportPdf->metadata.category, "File");
 
-    // The palette is opened by Ctrl+K: nothing may already hold it, or one of the two would quietly
-    // win over the other.
+    /*
+     * One action with one target is one command. The toolbars offer the same actions as the menus,
+     * so without this the palette would show two Undos and the reference would call the shortcut of
+     * a command a conflict with itself.
+     */
+    for (size_t i = 0; i < commands.all().size(); i++) {
+        for (size_t j = i + 1; j < commands.all().size(); j++) {
+            EXPECT_NE(CommandRegistry::commandKey(commands.all()[i]), CommandRegistry::commandKey(commands.all()[j]))
+                    << commands.all()[i].metadata.id << " and " << commands.all()[j].metadata.id
+                    << " are the same command offered twice";
+        }
+    }
+
+    // Undo is a menu entry and a tool button; it is one command, and it is the menu's.
+    const CommandEntry* undo = commands.findById("win.undo");
+    ASSERT_NE(undo, nullptr);
+    EXPECT_EQ(undo->metadata.category, "Edit") << "the menu entry is the command, not the tool button";
+    EXPECT_EQ(commands.findById("win.undo:UNDO"), nullptr) << "the tool button added no second Undo";
+
+    // The palette is opened by Ctrl+K: the palette itself is the one command allowed to hold it, and
+    // nothing else may, or one of the two would quietly win over the other.
     for (const CommandEntry& command: commands.all()) {
-        EXPECT_NE(command.metadata.accelerator, "Ctrl+K") << command.metadata.id;
+        if (command.metadata.id == "win.command-palette") {
+            EXPECT_EQ(command.metadata.accelerator, "Ctrl+K") << "the palette holds its own shortcut";
+        } else {
+            EXPECT_NE(command.metadata.accelerator, "Ctrl+K") << command.metadata.id;
+        }
     }
 
     // The toolbar items are in there too, with the tool they select as their target.
