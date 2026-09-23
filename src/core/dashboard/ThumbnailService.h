@@ -68,6 +68,11 @@ auto previewStateOf(xoj::preview::PreviewStatus status) -> DocumentCard::Preview
  * A request whose answer is already in the cache is delivered before `request()` returns - the
  * caller is the main thread, so that is still the main thread. Everything else is delivered from
  * the given `GMainContext` (the default one when null), which is where a widget may be touched.
+ *
+ * A request stays cancellable until its answer has been handed over or dropped, which includes the
+ * time the answer spends waiting on the main context: the window being torn down and the answer
+ * arriving are both main-context work, and the cancellation has to win whichever order they come
+ * in.
  */
 class ThumbnailService {
 public:
@@ -91,10 +96,23 @@ public:
      */
     auto request(const fs::path& path, Callback deliver) -> ThumbnailRequestId;
 
-    /// Forget one request: its callback will not be called.
+    /**
+     * Forget one request: its callback will not be called.
+     *
+     * A request is cancellable until its answer has been handed over or thrown away, which is
+     * longer than the worker takes: an answer the worker has already posted sits on the caller's
+     * main context until the main loop reaches it, and that is exactly when a window can be torn
+     * down - the window's own teardown runs on the main context too. Cancelling from there has to
+     * reach the queued answer, or the answer is handed to a dashboard that no longer exists.
+     */
     void cancel(ThumbnailRequestId id);
 
-    /// Forget every outstanding request. Called when the dashboard goes away.
+    /**
+     * Forget every outstanding request. Called when the dashboard goes away.
+     *
+     * With the same meaning as `cancel`, for every request: what is still being read and what has
+     * already been posted are both dropped, so nothing can be handed to the caller afterwards.
+     */
     void cancelAll();
 
     /**
@@ -105,10 +123,18 @@ public:
      */
     auto cachedPreview(const fs::path& path) const -> std::vector<std::uint8_t>;
 
-    /// How many requests have been accepted and not finished. For tests and for the UI to report.
+    /**
+     * How many requests the worker has not finished reading yet.
+     *
+     * An answer the worker has handed to the main context is not counted: the reading is done with,
+     * even though the answer may not have reached the caller yet. That is the number a dashboard
+     * reports and its tests check - "is this document still being read?" - and it is not the number
+     * of requests the caller can still cancel, which is larger while an answer is on its way.
+     */
     auto pendingCount() const -> std::size_t;
 
-    /// Block until the workers have nothing left to do.
+    /// Block until the workers have nothing left to read. An answer that is already on the main
+    /// context does not hold this up: it is the caller's own business when it reaches it.
     void waitIdle();
 
 private:
@@ -119,14 +145,49 @@ private:
         std::shared_ptr<std::atomic_bool> cancelled;
     };
 
+    /**
+     * What one request is, from the moment it is accepted until its answer has been handed over or
+     * thrown away.
+     *
+     * The requests live here rather than in the service because disposing of an answer must not
+     * touch the service: GLib disposes of a source the service queued after the service can be
+     * gone - a window is torn down while the answer is still on the main context - and forgetting
+     * the request then is the only thing disposal has to do. The answers hold a reference to this,
+     * so it outlives the service for as long as an answer of it is still around.
+     */
+    struct State {
+        std::mutex mutex;
+        std::condition_variable wake;
+        std::condition_variable idle;
+        std::deque<Request> queue;
+        /**
+         * Every request that can still be cancelled: from acceptance until its answer has been
+         * delivered or dropped. The worker's own view - what it is reading - is `queue` and `busy`;
+         * an entry here may well be one whose worker has already posted its answer.
+         */
+        std::map<ThumbnailRequestId, std::shared_ptr<std::atomic_bool>> cancellable;
+        std::size_t busy = 0;
+        bool stopping = false;
+        ThumbnailRequestId nextId = 1;
+    };
+
     struct Delivery {
         Callback deliver;
         ThumbnailResult result;
+        ThumbnailRequestId id = 0;
         std::shared_ptr<std::atomic_bool> cancelled;
+        /// Where the request is registered, so the answer can forget it even after the service is
+        /// gone.
+        std::shared_ptr<State> state;
+
+        /// The request is finished with: it can no longer be cancelled and the service does not
+        /// have to remember it any more.
+        void dispose();
     };
 
     void work();
-    void finish(ThumbnailRequestId id);
+    /// The worker is done with a request. An answer of it may still be on its way to the caller.
+    void finish(ThumbnailRequestId id, bool answerOnItsWay);
     /// Hand a result to the caller's main context.
     void post(Delivery&& delivery);
 
@@ -135,16 +196,9 @@ private:
 
     std::shared_ptr<ThumbnailCache> cache;
     GMainContext* context;
+    std::shared_ptr<State> state = std::make_shared<State>();
 
     std::thread worker;
-    mutable std::mutex mutex;
-    std::condition_variable wake;
-    std::condition_variable idle;
-    std::deque<Request> queue;
-    std::map<ThumbnailRequestId, std::shared_ptr<std::atomic_bool>> outstanding;
-    std::size_t busy = 0;
-    bool stopping = false;
-    ThumbnailRequestId nextId = 1;
 };
 
 }  // namespace xoj::dashboard

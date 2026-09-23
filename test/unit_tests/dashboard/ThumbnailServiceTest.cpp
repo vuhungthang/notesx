@@ -9,7 +9,10 @@
  * show a preview of the version of the file that is there now. These tests pin both down: the work
  * happens on a worker and the answer arrives on the main context, an answer already known is
  * handed over without a worker, a file that changed is read again, and a request that was
- * cancelled - or a service that went away - is never delivered.
+ * cancelled - or a service that went away - is never delivered. That last one includes the request
+ * whose worker is already finished with it and whose answer is waiting on the main context: the
+ * caller has to be able to cancel it there too, because that is where a window being torn down
+ * runs.
  *
  * @author Xournal++ Team
  * https://github.com/xournalpp/xournalpp
@@ -63,6 +66,47 @@ auto pump(const std::function<bool()>& done, int timeoutMs = 5000) -> bool {
     }
     return done();
 }
+
+/**
+ * A main context of the test's own, owned by the test thread.
+ *
+ * A worker that has an answer to hand over asks the context to run it. While someone owns the
+ * context, the answer waits its turn on it, and that is the state the application is in whenever
+ * the main loop runs: an answer the worker has finished with - and cannot be asked about any more -
+ * is sitting on the main context, waiting for the loop to reach it. The tests below need exactly
+ * that state, so they own the context themselves and decide when it is drained.
+ */
+class OwnedContext {
+public:
+    OwnedContext(): context(g_main_context_new()) {
+        if (g_main_context_acquire(this->context) == FALSE) {
+            g_main_context_unref(this->context);
+            this->context = nullptr;
+        }
+    }
+    ~OwnedContext() {
+        if (this->context != nullptr) {
+            g_main_context_release(this->context);
+            g_main_context_unref(this->context);
+        }
+    }
+
+    OwnedContext(const OwnedContext&) = delete;
+    auto operator=(const OwnedContext&) -> OwnedContext& = delete;
+
+    operator GMainContext*() const { return this->context; }
+
+    /// Whether the test thread got to own the context. Nothing below makes sense without it.
+    auto owned() const -> bool { return this->context != nullptr; }
+
+    /// Runs everything that is waiting on the context, as a main loop would.
+    void drain() {
+        while (g_main_context_iteration(this->context, FALSE)) {}
+    }
+
+private:
+    GMainContext* context;
+};
 
 }  // namespace
 
@@ -302,6 +346,75 @@ TEST(ThumbnailService, aServiceThatGoesAwayDropsWhatIsStillOutstanding) {
     // The window is gone: whatever the workers were doing, nothing may be handed to it now.
     pump([&delivered] { return !delivered.empty(); }, 600);
     EXPECT_TRUE(delivered.empty());
+
+    fs::remove_all(dir);
+}
+
+/*
+ * The gap between "the worker has read the document" and "the caller has been given the answer".
+ *
+ * The worker posts its answer to the caller's main context and is then finished with the request;
+ * whether the answer is ever handed over is not the worker's business any more. Cancelling in that
+ * gap - a card that left the model, a dashboard the user left, a window being torn down - has to
+ * reach the answer on the main context, or it is handed over to a dashboard that may not exist any
+ * more. The whole point of the service is that the caller can ask and then change its mind.
+ */
+TEST(ThumbnailService, anAnswerTheWorkerHasPostedIsStillCancellable) {
+    const fs::path dir = freshDir("xournalpp-test-units_thumbnailQueuedCancel");
+    const fs::path document = copyFixture(GET_TESTFILE(u8"packaged_xopp/testPreview.xopp"), dir / "notes.xopp");
+
+    auto cache = std::make_shared<ThumbnailCache>(dir / "cache");
+    OwnedContext context;
+    ASSERT_TRUE(context.owned());
+
+    std::vector<ThumbnailResult> delivered;
+    {
+        ThumbnailService service(cache, context);
+        const ThumbnailRequestId id = service.request(
+                document, [&delivered](const ThumbnailResult& result) { delivered.emplace_back(result); });
+        ASSERT_NE(id, 0U) << "the request went to a worker";
+
+        // The worker reads the document and posts its answer; nothing has handed it over yet.
+        service.waitIdle();
+        EXPECT_EQ(service.pendingCount(), 0U) << "the worker is done with the request";
+        EXPECT_TRUE(delivered.empty()) << "the answer is waiting on the main context";
+
+        service.cancel(id);
+        context.drain();
+    }
+
+    EXPECT_TRUE(delivered.empty()) << "an answer cancelled while it was on the main context must not be handed over";
+
+    fs::remove_all(dir);
+}
+
+/**
+ * The same gap, with the service taken away first - which is what a window's teardown does: the
+ * answer is already on the main context when the service is destroyed. Disposing of it afterwards
+ * must not touch the service that queued it, and must not hand it over.
+ */
+TEST(ThumbnailService, anAnswerQueuedWhenTheServiceGoesIsDropped) {
+    const fs::path dir = freshDir("xournalpp-test-units_thumbnailQueuedShutdown");
+    const fs::path document = copyFixture(GET_TESTFILE(u8"packaged_xopp/testPreview.xopp"), dir / "notes.xopp");
+
+    auto cache = std::make_shared<ThumbnailCache>(dir / "cache");
+    OwnedContext context;
+    ASSERT_TRUE(context.owned());
+
+    std::vector<ThumbnailResult> delivered;
+    {
+        ThumbnailService service(cache, context);
+        ASSERT_NE(service.request(document,
+                                  [&delivered](const ThumbnailResult& result) { delivered.emplace_back(result); }),
+                  0U);
+        service.waitIdle();
+        EXPECT_TRUE(delivered.empty()) << "the answer is waiting on the main context";
+    }
+
+    // The service is gone; the answer is not. Draining the context runs the source, and that has to
+    // end in the answer being thrown away rather than handed over.
+    context.drain();
+    EXPECT_TRUE(delivered.empty()) << "an answer that outlived the service must not be handed over";
 
     fs::remove_all(dir);
 }

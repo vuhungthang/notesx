@@ -750,6 +750,75 @@ class DashboardPageTeardownTest: public GtkTest {
 TEST_F(DashboardPageTeardownTest, aRebuildLeavesNoHandlerBehindAndThePageIsReleasedOnce) {}
 
 /*
+ * Plan 006, step 4 at the seam the window actually tears down: the answer to a preview the
+ * dashboard asked for can be on the main context while the page it belongs to is being destroyed.
+ *
+ * The worker hands its answer to the main context, and the window's own teardown runs on the main
+ * context too: whoever the loop reaches first decides whether the answer is handed to a page that
+ * is gone. Both of the sequences below are the real ones - `MainWindow::~MainWindow` cancels the
+ * dashboard's outstanding previews and then destroys the page, and the page's own teardown has to
+ * be enough for a caller that does not cancel for it.
+ *
+ * Nothing iterates the main context between the worker posting its answer and the page going away,
+ * so the answer waits on the context while the page is destroyed: the very order a running
+ * application arrives at when the user closes the window while a folder of notes is being read.
+ */
+class DashboardPagePreviewTeardownTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        CriticalWatch criticals;
+
+        auto teardownWithAnAnswerOnItsWay = [app, &criticals](const char* cacheName, bool cancelAllFirst) {
+            const fs::path document = validDocument();
+            auto service =
+                    std::make_shared<ThumbnailService>(std::make_shared<ThumbnailCache>(scratchFolder(cacheName)));
+
+            DashboardModel model;
+            model.setPinnedFiles({document});
+            model.refresh();
+
+            GtkWidget* window = gtk_application_window_new(app);
+            gtk_window_set_default_size(GTK_WINDOW(window), 900, 600);
+
+            auto page = std::make_unique<DashboardPage>(model, DashboardPage::Callbacks{}, service.get());
+            gtk_container_add(GTK_CONTAINER(window), page->getWidget());
+            gtk_widget_show_all(window);
+            settle();
+
+            ASSERT_EQ(page->getCardCount(DashboardSection::Pinned), 1U);
+            page->setActive(true);
+
+            // The card's document is read and the answer is posted on this thread's main context.
+            // The main context is not iterated in between, so the answer is on it and nothing has
+            // been handed over when the page is taken down.
+            service->waitIdle();
+            ASSERT_EQ(service->pendingCount(), 0U) << "the worker is done: its answer is on the main context";
+            ASSERT_EQ(model.getPreview(document), DocumentCard::Preview::Unknown) << "nothing is handed over yet";
+
+            if (cancelAllFirst) {
+                service->cancelAll();
+            }
+            page.reset();
+            gtk_widget_destroy(window);
+
+            // Now it is the answer's turn on the main context.
+            settle();
+
+            EXPECT_EQ(model.getPreview(document), DocumentCard::Preview::Unknown)
+                    << "an answer that was on the main context when the page went is dropped rather than handed over";
+            EXPECT_EQ(criticals.count(), 0U) << criticals.report();
+        };
+
+        // What MainWindow does: the window cancels, then the page goes.
+        teardownWithAnAnswerOnItsWay("teardownPreviewsCancelledByTheWindow", true);
+        // And a caller that leaves it to the page: the page is the last owner of what it asked for.
+        teardownWithAnAnswerOnItsWay("teardownPreviewsCancelledByThePage", false);
+
+        clearScratchFolder();
+    }
+};
+TEST_F(DashboardPagePreviewTeardownTest, aTeardownWhileAnAnswerIsOnTheMainContextDropsTheAnswer) {}
+
+/*
  * Plan 006, step 3: "responsive cards with a maximum content width". A card is the size its preview
  * needs whatever the window does, and it is the rows that multiply: a wide screen shows five to a
  * line and no more, a narrow one shows one, and nothing is ever squeezed below the size a preview

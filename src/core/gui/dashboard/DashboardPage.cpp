@@ -151,6 +151,21 @@ DashboardPage::DashboardPage(DashboardModel& model, Callbacks callbacks, Thumbna
 }
 
 DashboardPage::~DashboardPage() {
+    /*
+     * The page may go away while an answer it asked for is still on its way: the worker may have
+     * posted it already, in which case cancelling by id is the only way to reach it, and that is
+     * what happens here, before anything of the page is taken down. `alive` is the other half: an
+     * answer that is being handed over while the page goes away is dropped by its own callback
+     * rather than run against a page that is gone.
+     */
+    this->alive->store(false);
+    if (this->thumbnails != nullptr) {
+        for (const auto& pending: this->pendingRequests) {
+            this->thumbnails->cancel(pending.second);
+        }
+    }
+    this->pendingRequests.clear();
+
     // Destroy the widgets before the data their handlers point at: the page may outlive the window
     // that put it in a stack, and a button that outlives the page would call into freed memory.
     clearContainer(this->content);
@@ -748,8 +763,22 @@ void DashboardPage::requestPreviews() {
         }
 
         const fs::path path = card.path;
-        const ThumbnailRequestId id = this->thumbnails->request(
-                path, [this, key, path](const ThumbnailResult& result) { this->onPreviewReady(key, path, result); });
+        /*
+         * The callback holds the page and says so with `alive`, which the page clears as it goes
+         * away. Normally this page's cancellation is what keeps an answer out - the page cancels
+         * what it asks for as it is deactivated, rebuilt or destroyed, and the service reaches an
+         * answer that is already on the main context with it - and the check here is what makes
+         * "an answer that was already being handed over" a dropped answer rather than a call into
+         * a page that is gone.
+         */
+        const std::shared_ptr<std::atomic_bool> alive = this->alive;
+        const ThumbnailRequestId id =
+                this->thumbnails->request(path, [this, alive, key, path](const ThumbnailResult& result) {
+                    if (!alive->load()) {
+                        return;
+                    }
+                    this->onPreviewReady(key, path, result);
+                });
         if (id != 0) {
             this->pendingRequests[key] = id;
         }

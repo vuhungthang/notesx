@@ -21,9 +21,11 @@
 
 #pragma once
 
+#include <atomic>      // for atomic_bool
 #include <cstddef>     // for size_t
 #include <functional>  // for function
 #include <map>         // for map
+#include <memory>      // for shared_ptr
 #include <string>      // for string
 #include <vector>      // for vector
 
@@ -282,7 +284,19 @@ private:
     /// The pixbufs built from them, owned here.
     std::map<std::string, GdkPixbuf*> previewPixbufs;
     /// The requests that are still out, so one that goes away is cancelled rather than answered.
+    /// Cancelling one of these reaches an answer that the worker has already posted, which is the
+    /// moment a rebuild or a window going away runs into.
     std::map<std::string, ThumbnailRequestId> pendingRequests;
+    /**
+     * Whether this page is still there, shared with every preview callback the page has out.
+     *
+     * The page cancels what it has asked for as it goes away, and that is what normally keeps an
+     * answer from reaching it. This is the other half of it, for an answer that was already being
+     * handed over when the page was destroyed: the callback reads this before it touches anything
+     * of the page, so an answer that arrives then is dropped rather than run into a page that is
+     * gone.
+     */
+    std::shared_ptr<std::atomic_bool> alive = std::make_shared<std::atomic_bool>(true);
     bool active = false;
     /// The document the editor holds, kept across rebuilds so the way back survives them.
     std::string openDocumentName;
