@@ -27,7 +27,8 @@ GestureReferenceRow rowFor(const GestureSettings& settings, GestureKind kind) {
             row.detail = _("Draw a large circle around what you want to select. It has to close, be round, and be "
                            "much bigger than a letter - ordinary loops are left as ink.");
             row.binding = settings.circleToSelectEnabled ?
-                                  _("On. Watch for the preview before anything is selected; one Undo takes it back.") :
+                                  _("On. Only a clear, closed circle is acted on - anything doubtful is left as "
+                                    "ink - and one Undo takes the selection back.") :
                                   _("Off. Turn it on in the gesture settings when you want it.");
             row.settingId = "circleToSelectEnabled";
             break;
@@ -36,8 +37,8 @@ GestureReferenceRow rowFor(const GestureSettings& settings, GestureKind kind) {
             row.detail = _("Scrub densely back and forth over what you want to erase. Shading, hatching and a "
                            "single cross-out are left as ink.");
             row.binding = settings.scribbleToEraseEnabled ?
-                                  _("On. Watch for the region preview before anything is erased; one Undo takes it "
-                                    "back.") :
+                                  _("On. Only a clear scribble is acted on, and only whole covered strokes go; one "
+                                    "Undo brings them all back in a single step.") :
                                   _("Off. This gesture stays off until you turn it on yourself.");
             row.settingId = "scribbleToEraseEnabled";
             break;
