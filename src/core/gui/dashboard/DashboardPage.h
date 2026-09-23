@@ -102,7 +102,14 @@ public:
     /// The document the editor holds, which "Back" returns to. Empty hides the button.
     void setOpenDocument(const std::string& name);
 
-    /// Whether the page is on screen. Used to keep asking for previews only while it is.
+    /**
+     * Whether the page is on screen, and with it when previews are read.
+     *
+     * Becoming the surface the user looks at is what asks for the previews of the cards the page
+     * has; leaving it is what stops them, cancelling what is still out so an answer is never handed
+     * to cards nobody is looking at. Both belong here because the page is rebuilt before it is
+     * shown: a caller that only asked from the rebuild would ask for nothing on the first visit.
+     */
     void setActive(bool active);
     auto isActive() const -> bool;
 

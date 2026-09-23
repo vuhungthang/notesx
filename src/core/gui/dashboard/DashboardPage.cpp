@@ -162,7 +162,36 @@ DashboardPage::~DashboardPage() {
 
 auto DashboardPage::getWidget() const -> GtkWidget* { return this->page.get(); }
 
-void DashboardPage::setActive(bool active) { this->active = active; }
+void DashboardPage::setActive(bool active) {
+    if (this->active == active) {
+        return;
+    }
+    this->active = active;
+
+    if (active) {
+        /*
+         * Becoming the surface the user looks at is also the moment the previews of what it shows
+         * are asked for. The page is rebuilt from the model before it is shown, so its cards exist
+         * by now and this is the first chance to read them; asking from the rebuild alone would
+         * leave the first visit to the dashboard showing placeholders until something else happened
+         * to rebuild the page.
+         */
+        requestPreviews();
+        return;
+    }
+
+    /*
+     * Off screen nothing is read and nothing that was asked for is still wanted: what is still out
+     * is cancelled, so an answer is never handed to cards the user has left behind. The reading
+     * itself is still finished and cached, so coming back costs no second read.
+     */
+    if (this->thumbnails != nullptr) {
+        for (const auto& pending: this->pendingRequests) {
+            this->thumbnails->cancel(pending.second);
+        }
+    }
+    this->pendingRequests.clear();
+}
 auto DashboardPage::isActive() const -> bool { return this->active; }
 
 void DashboardPage::setOpenDocument(const std::string& name) {
