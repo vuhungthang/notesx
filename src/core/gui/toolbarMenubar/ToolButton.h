@@ -34,6 +34,11 @@ public:
     std::string getToolDisplayName() const override;
     void setPopoverFactory(const PopoverFactory* factory);
 
+    // Plan 007: a tool button activates its action on the window, with its target when it has one.
+    auto getCommandAction() const -> std::optional<Action> override { return this->action; }
+    auto getCommandTarget() const -> GVariant* override { return this->target.get(); }
+    auto getCommandIconName() const -> std::string override { return this->iconName; }
+
 protected:
     xoj::util::WidgetSPtr createItem(bool horizontal) override;
 

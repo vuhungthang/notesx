@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include <string>  // for string
+#include <optional>  // for optional
+#include <string>    // for string
 #include <vector>
 
 #include <gtk/gtk.h>  // for GtkWidget
@@ -52,6 +53,20 @@ public:
     const std::string& getId() const;
     Category getCategory() const;
     virtual std::string getToolDisplayName() const = 0;
+
+    /*
+     * Plan 007: what the command palette needs to offer a toolbar item as a command.
+     *
+     * An item that activates a GAction says so here and needs nothing else; an item that runs
+     * something of its own - a plugin button calling into Lua, a slider, a spacer - says nothing
+     * and is left out of the palette rather than guessed at. A target is borrowed: it belongs to
+     * the item that owns it, and lives as long as the item does.
+     */
+    virtual auto getCommandAction() const -> std::optional<Action> { return std::nullopt; }
+    /// @brief The value the action is activated with, or nullptr when it takes none
+    virtual auto getCommandTarget() const -> GVariant* { return nullptr; }
+    /// @brief The icon the command palette shows for this item, or an empty name
+    virtual auto getCommandIconName() const -> std::string { return {}; }
 
     /**
      * Returns: (transfer floating)
