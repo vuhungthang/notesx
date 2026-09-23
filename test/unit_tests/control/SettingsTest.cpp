@@ -640,3 +640,73 @@ TEST(SettingsTest, testPinningAndFoldersChangeTheSettingsAndNothingElse) {
 
     fs::remove_all(dir);
 }
+
+/*
+ * Plan 007, steps 2 to 4: what the palette and the guidance remember about the user.
+ *
+ * The commands the user ran from the palette are kept in the profile so that the next palette shows
+ * them, and the guidance and the tips record what the user has already been told so that nothing is
+ * said twice. All of it is local to the profile: nothing here leaves the machine, and a fresh
+ * profile starts with nothing remembered.
+ */
+TEST(SettingsTest, testRecentCommandsAreKeptMostRecentFirst) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_recentCommands");
+    Settings settings{dir / "settings.xml"};
+    EXPECT_TRUE(settings.getRecentCommands().empty()) << "a fresh profile has run no command";
+
+    settings.addRecentCommand("win.undo");
+    settings.addRecentCommand("win.export-as-pdf");
+    EXPECT_EQ(settings.getRecentCommands(), (std::vector<std::string>{"win.export-as-pdf", "win.undo"}));
+
+    // Running the same command again moves it to the front instead of listing it twice.
+    settings.addRecentCommand("win.undo");
+    EXPECT_EQ(settings.getRecentCommands(), (std::vector<std::string>{"win.undo", "win.export-as-pdf"}));
+
+    Settings loaded{dir / "settings.xml"};
+    loaded.load();
+    EXPECT_EQ(loaded.getRecentCommands(), settings.getRecentCommands()) << "the list survives a restart";
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testRecentCommandsStayBounded) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_recentCommandsBounded");
+    Settings settings{dir / "settings.xml"};
+    for (size_t i = 0; i < 40; i++) {
+        settings.addRecentCommand("win.command-" + std::to_string(i));
+    }
+    EXPECT_LE(settings.getRecentCommands().size(), 10U) << "the palette shows a handful, not a history";
+    EXPECT_EQ(settings.getRecentCommands().front(), "win.command-39");
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testGuidanceAndTipsAreRememberedAndCanBeReplayed) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_interfaceTips");
+    Settings settings{dir / "settings.xml"};
+    EXPECT_FALSE(settings.hasSeenInterfaceGuidance()) << "a fresh profile has not seen the guidance";
+    EXPECT_TRUE(settings.isInterfaceTipsEnabled()) << "tips are offered until the user turns them off";
+    EXPECT_FALSE(settings.hasSeenTip("tool-properties"));
+
+    settings.setInterfaceGuidanceSeen(true);
+    settings.markTipSeen("tool-properties");
+    settings.setInterfaceTipsEnabled(false);
+
+    Settings loaded{dir / "settings.xml"};
+    loaded.load();
+    EXPECT_TRUE(loaded.hasSeenInterfaceGuidance());
+    EXPECT_TRUE(loaded.hasSeenTip("tool-properties"));
+    EXPECT_FALSE(loaded.isInterfaceTipsEnabled()) << "a tip the user turned off stays off";
+
+    // "Show interface tips again" in the settings: everything is forgotten, so the guidance appears
+    // once more and every tip may be shown again.
+    loaded.resetInterfaceTips();
+    EXPECT_FALSE(loaded.hasSeenInterfaceGuidance());
+    EXPECT_TRUE(loaded.isInterfaceTipsEnabled());
+    EXPECT_FALSE(loaded.hasSeenTip("tool-properties"));
+
+    Settings replayed{dir / "settings.xml"};
+    replayed.load();
+    EXPECT_FALSE(replayed.hasSeenInterfaceGuidance()) << "the reset is what is persisted, not the history";
+
+    fs::remove_all(dir);
+}

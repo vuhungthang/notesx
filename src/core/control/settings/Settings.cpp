@@ -483,6 +483,73 @@ void Settings::saveDashboard(xmlNodePtr root) {
     }
 }
 
+/**
+ * Plan 007: the palette's recent commands and what the guidance and the tips have shown.
+ *
+ * Every id is written as it stands and nothing else is written beside it: no timestamps, no counts,
+ * nothing that would say when or how often the user ran something.
+ */
+void Settings::saveInterface(xmlNodePtr root) {
+    xmlNodePtr interface = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("interface"), nullptr);
+    xmlSetProp(interface, reinterpret_cast<const xmlChar*>("guidanceSeen"),
+               reinterpret_cast<const xmlChar*>(this->interfaceGuidanceSeen ? "true" : "false"));
+    xmlSetProp(interface, reinterpret_cast<const xmlChar*>("tipsEnabled"),
+               reinterpret_cast<const xmlChar*>(this->interfaceTipsEnabled ? "true" : "false"));
+
+    for (const std::string& id: this->recentCommands) {
+        xmlNodePtr node = xmlNewChild(interface, nullptr, reinterpret_cast<const xmlChar*>("recentCommand"), nullptr);
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("id"), reinterpret_cast<const xmlChar*>(id.c_str()));
+    }
+    for (const std::string& id: this->seenInterfaceTips) {
+        xmlNodePtr node = xmlNewChild(interface, nullptr, reinterpret_cast<const xmlChar*>("seenTip"), nullptr);
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("id"), reinterpret_cast<const xmlChar*>(id.c_str()));
+    }
+}
+
+void Settings::parseInterface(xmlNodePtr cur) {
+    auto attribute = [cur](const char* name) -> std::string {
+        xmlChar* value = xmlGetProp(cur, reinterpret_cast<const xmlChar*>(name));
+        if (value == nullptr) {
+            return {};
+        }
+        std::string text(reinterpret_cast<const char*>(value));
+        xmlFree(value);
+        return text;
+    };
+
+    const std::string guidanceSeen = attribute("guidanceSeen");
+    if (!guidanceSeen.empty()) {
+        this->interfaceGuidanceSeen = guidanceSeen == "true";
+    }
+    const std::string tipsEnabled = attribute("tipsEnabled");
+    if (!tipsEnabled.empty()) {
+        this->interfaceTipsEnabled = tipsEnabled == "true";
+    }
+
+    this->recentCommands.clear();
+    this->seenInterfaceTips.clear();
+    for (xmlNodePtr node = cur->children; node != nullptr; node = node->next) {
+        if (node->type != XML_ELEMENT_NODE) {
+            continue;
+        }
+        xmlChar* id = xmlGetProp(node, reinterpret_cast<const xmlChar*>("id"));
+        if (id == nullptr) {
+            continue;
+        }
+        const std::string value(reinterpret_cast<const char*>(id));
+        xmlFree(id);
+        if (value.empty()) {
+            continue;
+        }
+
+        if (!xmlStrcmp(node->name, reinterpret_cast<const xmlChar*>("recentCommand"))) {
+            this->recentCommands.emplace_back(value);
+        } else if (!xmlStrcmp(node->name, reinterpret_cast<const xmlChar*>("seenTip"))) {
+            this->seenInterfaceTips.emplace_back(value);
+        }
+    }
+}
+
 void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Parse data map
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("data"))) {
@@ -507,6 +574,12 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Plan 006: the dashboard's pinned files and watched folders, in their own element.
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("dashboard"))) {
         parseDashboard(cur);
+        return;
+    }
+
+    // Plan 007: the palette's recent commands and what the guidance and the tips have shown.
+    if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("interface"))) {
+        parseInterface(cur);
         return;
     }
 
@@ -1217,6 +1290,7 @@ void Settings::save() {
 
     // Plan 006: the dashboard's pinned files and watched folders.
     saveDashboard(root);
+    saveInterface(root);
 
     saveProperty("lastSavePath", char_cast(this->lastSavePath.u8string().c_str()), root);
     saveProperty("lastOpenPath", char_cast(this->lastOpenPath.u8string().c_str()), root);
@@ -1840,6 +1914,76 @@ auto Settings::setDashboardFolderRecursive(const fs::path& folder, bool recursiv
 }
 
 auto Settings::getDashboardFolders() const -> const std::vector<DashboardFolder>& { return this->dashboardFolders; }
+
+auto Settings::getRecentCommands() const -> const std::vector<std::string>& { return this->recentCommands; }
+
+void Settings::addRecentCommand(const std::string& commandId) {
+    if (commandId.empty()) {
+        return;
+    }
+
+    auto alreadyThere = std::find(this->recentCommands.begin(), this->recentCommands.end(), commandId);
+    if (alreadyThere != this->recentCommands.end()) {
+        if (alreadyThere == this->recentCommands.begin()) {
+            return;  // already the most recent one: nothing about the list changes
+        }
+        this->recentCommands.erase(alreadyThere);
+    }
+    this->recentCommands.insert(this->recentCommands.begin(), commandId);
+    if (this->recentCommands.size() > RECENT_COMMANDS_MAX) {
+        this->recentCommands.resize(RECENT_COMMANDS_MAX);
+    }
+    save();
+}
+
+void Settings::setRecentCommands(std::vector<std::string> commandIds) {
+    commandIds.resize(std::min(commandIds.size(), RECENT_COMMANDS_MAX));
+    if (commandIds == this->recentCommands) {
+        return;
+    }
+    this->recentCommands = std::move(commandIds);
+    save();
+}
+
+auto Settings::hasSeenInterfaceGuidance() const -> bool { return this->interfaceGuidanceSeen; }
+
+void Settings::setInterfaceGuidanceSeen(bool seen) {
+    if (this->interfaceGuidanceSeen == seen) {
+        return;
+    }
+    this->interfaceGuidanceSeen = seen;
+    save();
+}
+
+auto Settings::isInterfaceTipsEnabled() const -> bool { return this->interfaceTipsEnabled; }
+
+void Settings::setInterfaceTipsEnabled(bool enabled) {
+    if (this->interfaceTipsEnabled == enabled) {
+        return;
+    }
+    this->interfaceTipsEnabled = enabled;
+    save();
+}
+
+auto Settings::hasSeenTip(const std::string& tipId) const -> bool {
+    return std::find(this->seenInterfaceTips.begin(), this->seenInterfaceTips.end(), tipId) !=
+           this->seenInterfaceTips.end();
+}
+
+void Settings::markTipSeen(const std::string& tipId) {
+    if (tipId.empty() || hasSeenTip(tipId)) {
+        return;
+    }
+    this->seenInterfaceTips.emplace_back(tipId);
+    save();
+}
+
+void Settings::resetInterfaceTips() {
+    this->interfaceGuidanceSeen = false;
+    this->interfaceTipsEnabled = true;
+    this->seenInterfaceTips.clear();
+    save();
+}
 
 void Settings::setDashboardFolders(const std::vector<DashboardFolder>& folders) {
     if (folders == this->dashboardFolders) {

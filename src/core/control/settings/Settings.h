@@ -159,6 +159,9 @@ private:
      */
     void parseDashboard(xmlNodePtr cur);
     void saveDashboard(xmlNodePtr root);
+    /// Plan 007: what the palette and the guidance remember about this user, in its own element.
+    void parseInterface(xmlNodePtr cur);
+    void saveInterface(xmlNodePtr root);
 
     static xmlNodePtr savePropertyDouble(const gchar* key, double value, xmlNodePtr parent);
     static xmlNodePtr saveProperty(const gchar* key, int value, xmlNodePtr parent);
@@ -461,6 +464,38 @@ public:
      * own setting, never the folder.
      */
     auto setDashboardFolderRecursive(const fs::path& folder, bool recursive) -> bool;
+
+    /**
+     * Plan 007, step 2: the commands the user ran from the palette, most recent first.
+     *
+     * The list is the palette's own memory of this profile and stays on the machine: nothing about
+     * which command was run, or when, goes anywhere else. Running a command that is already in the
+     * list moves it to the front rather than listing it twice, and the list is kept short - the
+     * palette shows a handful of recent commands when the query is empty, not a history.
+     */
+    auto getRecentCommands() const -> const std::vector<std::string>&;
+    void addRecentCommand(const std::string& commandId);
+    void setRecentCommands(std::vector<std::string> commandIds);
+
+    /**
+     * Plan 007, steps 3 and 4: what the guidance and the tips have already told this user.
+     *
+     * `hasSeenInterfaceGuidance()` is false for a fresh profile, which is what makes the workspace
+     * explanation appear once; a tip is shown once and is remembered as seen when it is dismissed.
+     * `isInterfaceTipsEnabled()` is the switch the settings offer for turning all of them off, and
+     * resetInterfaceTips() is the "show interface tips again" button: it forgets both, so the
+     * guidance appears once more and every tip may be shown again.
+     */
+    auto hasSeenInterfaceGuidance() const -> bool;
+    void setInterfaceGuidanceSeen(bool seen);
+    auto isInterfaceTipsEnabled() const -> bool;
+    void setInterfaceTipsEnabled(bool enabled);
+    auto hasSeenTip(const std::string& tipId) const -> bool;
+    void markTipSeen(const std::string& tipId);
+    void resetInterfaceTips();
+
+    /// The most recent commands the palette keeps: a handful, so the list stays a shortcut.
+    static constexpr size_t RECENT_COMMANDS_MAX = 10;
 
     bool isHighlightPosition() const;
     void setHighlightPosition(bool highlight);
@@ -929,6 +964,18 @@ private:
      */
     std::vector<std::string> dashboardPinnedFiles;
     std::vector<DashboardFolder> dashboardFolders;
+
+    /**
+     * Plan 007: what the palette and the guidance remember about this profile.
+     *
+     * The recent commands are ids of commands from the registry and the seen tips are ids of tips;
+     * both are stable strings rather than labels, so a translated title or a renamed menu entry
+     * never turns a remembered command into a different one.
+     */
+    std::vector<std::string> recentCommands;
+    std::vector<std::string> seenInterfaceTips;
+    bool interfaceGuidanceSeen = false;
+    bool interfaceTipsEnabled = true;
 
     /**
      *  The last saved folder
