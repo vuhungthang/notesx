@@ -1,0 +1,8 @@
+# name: negative-short-flick
+# recognizer: scribble
+# expect: nomatch
+# points: 4
+200.0000 200.0000
+230.0000 205.0000
+205.0000 210.0000
+235.0000 214.0000

@@ -1,0 +1,10 @@
+# name: negative-crossout-zigzag
+# recognizer: scribble
+# expect: nomatch
+# points: 6
+180.0000 200.0000
+300.0000 200.0000
+180.0000 200.0000
+300.0000 200.0000
+180.0000 200.0000
+300.0000 200.0000
