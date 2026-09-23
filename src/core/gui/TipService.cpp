@@ -38,6 +38,15 @@ constexpr TipText TIPS[] = {
         {"tool-properties", "This is where a tool's own settings live - the same place every time."},
         {"favorite-presets", "Keep the presets you use most here, and they are one click away."},
         {"page-multi-select", "Several pages are selected: what you do next happens to all of them."},
+        /*
+         * Plan 008, step 7: what a gesture says the first time it acts. Each one names the gesture,
+         * says what it just did and that it can be undone, because the notice is only ever offered
+         * where there is an undo record - and offers, beside it, to turn the gesture off.
+         */
+        {"gesture-circle-to-select",
+         "Circled: what was inside the circle is selected. Undo puts it back the way it was."},
+        {"gesture-scribble-to-erase",
+         "Scribbled: the covered strokes are gone. Undo brings them all back in one step."},
 };
 
 auto textFor(TipService::Tip tip) -> const char* {
@@ -59,6 +68,10 @@ auto TipService::idOf(Tip tip) -> const char* {
             return "favorite-presets";
         case Tip::PageMultiSelect:
             return "page-multi-select";
+        case Tip::GestureCircleToSelect:
+            return "gesture-circle-to-select";
+        case Tip::GestureScribbleToErase:
+            return "gesture-scribble-to-erase";
     }
     return "";
 }
@@ -72,7 +85,7 @@ auto TipService::of(GtkWindow* window) -> TipService* {
     return static_cast<TipService*>(g_object_get_data(G_OBJECT(window), TIP_SERVICE_DATA_KEY));
 }
 
-void TipService::offerAt(GtkWidget* widget, Tip tip) {
+void TipService::offerAt(GtkWidget* widget, Tip tip, TurnOffAction turnOff) {
     if (widget == nullptr) {
         return;
     }
@@ -82,7 +95,7 @@ void TipService::offerAt(GtkWidget* widget, Tip tip) {
     }
     TipService* tips = of(GTK_WINDOW(toplevel));
     if (tips != nullptr) {
-        tips->offer(tip, widget);
+        tips->offer(tip, widget, std::move(turnOff));
     }
 }
 
@@ -122,8 +135,32 @@ TipService::TipService(GtkWindow* window, Settings* settings): window(window), s
     gtk_box_pack_start(GTK_BOX(box), dismiss, FALSE, FALSE, 0);
     this->dismissButton.reset(dismiss, xoj::util::ref);
 
+    /*
+     * Plan 008, step 7: the second button a gesture notice offers - turning that gesture off. It is
+     * built with the popover and hidden, because which tips offer it is decided per offer; a tip
+     * about anything else never shows it, and never shows a button that would do nothing.
+     */
+    GtkWidget* turnOff = gtk_button_new_with_label(_("Turn this gesture off"));
+    gtk_widget_set_margin_start(turnOff, 12);
+    gtk_widget_set_margin_end(turnOff, 6);
+    gtk_widget_set_margin_bottom(turnOff, 12);
+    gtk_widget_set_halign(turnOff, GTK_ALIGN_END);
+    setAccessibleName(turnOff, _("Turn the gesture this notice is about off"));
+    gtk_box_pack_start(GTK_BOX(box), turnOff, FALSE, FALSE, 0);
+    gtk_widget_set_visible(turnOff, FALSE);
+    this->turnOffButton.reset(turnOff, xoj::util::ref);
+
     this->clickedHandlerId =
             g_signal_connect_swapped(dismiss, "clicked", G_CALLBACK(+[](TipService* self) { self->dismiss(); }), this);
+    g_signal_connect_swapped(turnOff, "clicked", G_CALLBACK(+[](TipService* self) {
+                                 // The action first, while what it changes still has an undo record
+                                 // behind it; then the notice goes and is not shown again.
+                                 if (self->turnOff) {
+                                     self->turnOff();
+                                 }
+                                 self->dismiss();
+                             }),
+                             this);
     // Escape puts it away for a keyboard user who has not tabbed to the button yet.
     this->keyHandlerId = g_signal_connect_swapped(popover, "key-press-event",
                                                   G_CALLBACK(+[](TipService* self, GdkEventKey* event) -> gboolean {
@@ -160,7 +197,7 @@ TipService::~TipService() {
     }
 }
 
-void TipService::offer(Tip tip, GtkWidget* anchor) {
+void TipService::offer(Tip tip, GtkWidget* anchor, TurnOffAction turnOff) {
     if (this->popover == nullptr || this->settings == nullptr) {
         return;
     }
@@ -172,6 +209,11 @@ void TipService::offer(Tip tip, GtkWidget* anchor) {
     // At most one: a tip offered while another is up takes its place rather than sitting next to it.
     if (gtk_widget_is_visible(this->popover.get())) {
         gtk_popover_popdown(GTK_POPOVER(this->popover.get()));
+    }
+
+    this->turnOff = std::move(turnOff);
+    if (this->turnOffButton) {
+        gtk_widget_set_visible(this->turnOffButton.get(), this->turnOff != nullptr);
     }
 
     this->shown = tip;
@@ -213,6 +255,8 @@ auto TipService::shownTip() const -> std::optional<Tip> { return this->shown; }
 auto TipService::getPopover() const -> GtkWidget* { return this->popover.get(); }
 
 auto TipService::getDismissButton() const -> GtkWidget* { return this->dismissButton.get(); }
+
+auto TipService::getTurnOffButton() const -> GtkWidget* { return this->turnOffButton.get(); }
 
 void TipService::setAccessibleName(GtkWidget* widget, const char* name) {
     atk_object_set_name(gtk_widget_get_accessible(widget), name);

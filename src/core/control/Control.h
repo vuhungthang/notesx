@@ -23,6 +23,8 @@
 #include <gtk/gtk.h>                // for GtkLabel
 
 #include "control/ToolEnums.h"                      // for ToolSize, ToolType
+#include "control/gestures/GestureRecognizer.h"     // for GestureKind (Plan 008)
+#include "control/gestures/GestureSettings.h"       // for GestureSettings (Plan 008)
 #include "control/jobs/ProgressListener.h"          // for ProgressListener
 #include "control/settings/ViewModes.h"             // for ViewModeId
 #include "control/tools/EditSelection.h"            // for OrderChange
@@ -225,6 +227,18 @@ public:
      * pointer, and at the centre of the view when the pointer is not over the window.
      */
     void showQuickPalette();
+
+    /**
+     * Plan 008, step 7: say so after a gesture acts, and offer to turn it off.
+     *
+     * Called from the one place a gesture commits, and only where the gesture actually acted - which
+     * is only ever with an undo record behind it, because that is what the seam guarantees before it
+     * calls anything. The notice names the gesture, says it can be undone, and offers to turn that
+     * gesture off; turning a gesture off can only make the application do less. Nothing is said when
+     * the user has switched the notices off, or when this gesture's notice has been seen already,
+     * which the tip service decides.
+     */
+    void reportGestureCommitted(xoj::gesture::GestureKind kind);
     void setFullscreen(bool enabled);
     void setShowSidebar(bool enabled);
     void setShowToolbar(bool enabled);
@@ -508,6 +522,16 @@ protected:
 
     void showFontDialog();
     void showColorChooserDialog();
+
+    /**
+     * Plan 008, step 7: hold a gesture off after a notice offered to.
+     *
+     * Turning a gesture off is the only direction a notice may take - it can only make the
+     * application do less - and it is stored the way the settings dialog stores it, so the settings
+     * page shows it off and the reference says so. Nothing here runs without a gesture having just
+     * acted, which means without an undo record standing behind what it did.
+     */
+    void turnGestureOff(xoj::gesture::GestureKind kind);
 
     void fileLoaded(int scrollToPage = -1);
 

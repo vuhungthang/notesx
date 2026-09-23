@@ -30,6 +30,7 @@
 #include "control/tools/StrokeHandler.h"         // for StrokeHandler (the seam's caller)
 #include "gui/GladeSearchpath.h"                 // for GladeSearchpath
 #include "gui/MainWindow.h"                      // for MainWindow
+#include "gui/TipService.h"                      // for TipService (Plan 008, step 7)
 #include "gui/inputdevices/PositionInputData.h"  // for PositionInputData
 #include "model/Document.h"                      // for Document
 #include "model/Layer.h"                         // for Layer
@@ -97,6 +98,25 @@ public:
         this->control->getSettings()->setGestureSettings(settings);
     }
     void liveSettings(GestureSettings settings) { this->control->getSettings()->setGestureSettings(settings); }
+
+    /**
+     * Plan 008, step 7: a profile that may be told about a gesture again, with the notices on.
+     *
+     * Whether a tip has been shown is remembered in the profile and the profile outlives one case,
+     * so a case about a notice says where it starts from; without that it would be reading what the
+     * case before it left behind.
+     */
+    void prepareNotices() {
+        Settings* settings = this->control->getSettings();
+        settings->resetInterfaceTips();
+        settings->setInterfaceTipsEnabled(true);
+        GestureSettings gesture = settings->getGestureSettings();
+        gesture.feedbackEnabled = true;
+        settings->setGestureSettings(gesture);
+    }
+
+    /// The window's tip service, where the notices about gestures are offered.
+    auto tips() const -> xoj::gui::TipService* { return this->win->getTipService(); }
 
     auto page() const -> PageRef { return this->control->getDocument()->getPage(0); }
     auto layer() const -> Layer* { return this->page()->getSelectedLayer(); }
@@ -337,15 +357,103 @@ void theInputHandlerWritesOrdinaryInkWhenTheGestureIsOff(GestureCommitGtkFixture
     EXPECT_EQ(test.control->getUndoRedoHandler()->undoDescription(), "Undo: Draw stroke");
 }
 
+/*
+ * Plan 008, step 7: the first time a gesture acts, the application says so - naming the gesture that
+ * just did something, saying it can be undone, and offering to turn that gesture off. The undo was
+ * already checked above; here what matters is that the notice appears only where the gesture acted
+ * and that its offer is a way to do less, not more.
+ */
+void theFirstScribbleSaysSoAndOffersToTurnItOff(GestureCommitGtkFixture& test) {
+    test.prepareNotices();
+    test.enableScribble(true);
+    test.clearUndo();
+    test.addStroke(260.0, 300.0, 30.0, 10.0);
+    ASSERT_EQ(test.elementCount(), 1U);
+
+    test.drawThroughStrokeHandler(loadFixture("scribble/positive-dense-scrub.txt"));
+
+    ASSERT_EQ(test.elementCount(), 0U) << "the gesture acted, so there is an undo record to speak of";
+    ASSERT_TRUE(test.control->getUndoRedoHandler()->canUndo());
+    ASSERT_NE(test.tips(), nullptr) << "the window offers tips";
+    EXPECT_TRUE(test.tips()->isShown()) << "the first successful gesture says so";
+    EXPECT_EQ(test.tips()->shownTip(), xoj::gui::TipService::Tip::GestureScribbleToErase);
+
+    // The offer beside the dismissal: turning this gesture off, which is the safe direction.
+    GtkWidget* turnOff = test.tips()->getTurnOffButton();
+    ASSERT_NE(turnOff, nullptr);
+    EXPECT_TRUE(gtk_widget_is_visible(turnOff)) << "a gesture notice offers to turn that gesture off";
+    ASSERT_TRUE(test.control->getSettings()->getGestureSettings().scribbleToEraseEnabled);
+
+    gtk_button_clicked(GTK_BUTTON(turnOff));
+
+    EXPECT_FALSE(test.control->getSettings()->getGestureSettings().scribbleToEraseEnabled)
+            << "taking the offer turns the gesture off";
+    EXPECT_FALSE(test.tips()->isShown()) << "and the notice goes";
+    EXPECT_TRUE(test.control->getSettings()->hasSeenTip(
+            xoj::gui::TipService::idOf(xoj::gui::TipService::Tip::GestureScribbleToErase)))
+            << "and is not shown again";
+}
+
+/// A gesture that did not act says nothing: the stroke became ordinary ink and there is no notice.
+void aGestureThatDoesNotActSaysNothing(GestureCommitGtkFixture& test) {
+    test.prepareNotices();
+    test.enableScribble(true);
+    test.clearUndo();
+    test.addStroke(10.0, 10.0, 40.0, 40.0);  // nowhere near the scrub's region
+
+    test.drawThroughStrokeHandler(loadFixture("scribble/positive-dense-scrub.txt"));
+
+    ASSERT_EQ(test.elementCount(), 2U) << "the scrub became ordinary ink beside the untouched stroke";
+    EXPECT_FALSE(test.tips()->isShown()) << "nothing is said about a gesture that did not act";
+}
+
+/// And a user who has switched the notices off is not told anything, though the gesture still acts.
+void nothingIsSaidWhenTheNoticesAreOff(GestureCommitGtkFixture& test) {
+    test.prepareNotices();
+    GestureSettings settings = test.control->getSettings()->getGestureSettings();
+    settings.feedbackEnabled = false;
+    test.liveSettings(settings);
+    test.enableScribble(true);
+    test.clearUndo();
+    test.addStroke(260.0, 300.0, 30.0, 10.0);
+    test.addStroke(300.0, 320.0, 30.0, 0.0);
+
+    test.drawThroughStrokeHandler(loadFixture("scribble/positive-dense-scrub.txt"));
+
+    ASSERT_EQ(test.elementCount(), 0U) << "the gesture still acts with the notices off";
+    ASSERT_TRUE(test.control->getUndoRedoHandler()->canUndo());
+    EXPECT_FALSE(test.tips()->isShown()) << "it just does not say so";
+}
+
+/// A notice is offered once: after it has been put away, the same gesture acts silently.
+void theNoticeIsOnlyOfferedOnce(GestureCommitGtkFixture& test) {
+    test.prepareNotices();
+    test.enableScribble(true);
+    test.clearUndo();
+
+    test.addStroke(260.0, 300.0, 30.0, 10.0);
+    test.drawThroughStrokeHandler(loadFixture("scribble/positive-dense-scrub.txt"));
+    ASSERT_TRUE(test.tips()->isShown());
+    test.tips()->dismiss();
+    settle();
+    ASSERT_FALSE(test.tips()->isShown());
+
+    test.addStroke(260.0, 300.0, 30.0, 10.0);
+    test.drawThroughStrokeHandler(loadFixture("scribble/positive-dense-scrub.txt"));
+
+    EXPECT_FALSE(test.tips()->isShown()) << "the user has been told about this gesture already";
+}
+
 }  // namespace
 
-INSTANTIATE_TEST_SUITE_P(GestureCommit, GestureCommitGtkFixture,
-                         ::testing::Values(&disabledGesturesLeaveTheDocumentAlone,
-                                           &aConfirmedScribbleErasesAsOneUndoGroup,
-                                           &aGestureThatCoversNothingLeavesInkAlone,
-                                           &circleToSelectIsRefusedForWantOfAnUndoGroup,
-                                           &theInputHandlerSuppressesScrubInkAndErasesAsOneUndoGroup,
-                                           &theInputHandlerWritesOrdinaryInkWhenTheGestureIsOff));
+INSTANTIATE_TEST_SUITE_P(
+        GestureCommit, GestureCommitGtkFixture,
+        ::testing::Values(&disabledGesturesLeaveTheDocumentAlone, &aConfirmedScribbleErasesAsOneUndoGroup,
+                          &aGestureThatCoversNothingLeavesInkAlone, &circleToSelectIsRefusedForWantOfAnUndoGroup,
+                          &theInputHandlerSuppressesScrubInkAndErasesAsOneUndoGroup,
+                          &theInputHandlerWritesOrdinaryInkWhenTheGestureIsOff,
+                          &theFirstScribbleSaysSoAndOffersToTurnItOff, &aGestureThatDoesNotActSaysNothing,
+                          &nothingIsSaidWhenTheNoticesAreOff, &theNoticeIsOnlyOfferedOnce));
 
 /// The scenario runs inside the fixture's runTest, where the application is up.
 TEST_P(GestureCommitGtkFixture, theScenario) {}

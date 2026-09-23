@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <functional>  // for function
 #include <optional>
 
 #include <gtk/gtk.h>  // for GtkWidget, GtkWindow
@@ -20,6 +21,14 @@
 class Settings;
 
 namespace xoj::gui {
+
+/**
+ * What a notice can offer to do beside being put away: turning the gesture it is about off.
+ *
+ * It can only make the application do less - nothing a user could not undo - which is why a notice
+ * may offer it at all.
+ */
+using TurnOffAction = std::function<void()>;
 
 /**
  * The tips (Plan 007, step 4).
@@ -57,6 +66,17 @@ public:
          * code that recognises the second page being added, with offerAt() and no change here.
          */
         PageMultiSelect,
+
+        /**
+         * Plan 008, step 7: the first time a stylus gesture acts.
+         *
+         * One id per gesture, because the profile remembers which ones the user has been told about
+         * and because what a user is being told about is which gesture just did something. They are
+         * offered from the one place a gesture commits, keyed on the kind of the gesture, so a
+         * gesture that becomes able to act gets its notice without anything new being added here.
+         */
+        GestureCircleToSelect,
+        GestureScribbleToErase,
     };
 
     /// The stable id of a tip: what the profile remembers, and what a caller offers.
@@ -81,7 +101,7 @@ public:
      * widget, and a widget in a window whose service has nothing to say - or in no window at all -
      * does nothing.
      */
-    static void offerAt(GtkWidget* widget, Tip tip);
+    static void offerAt(GtkWidget* widget, Tip tip, TurnOffAction turnOff = {});
 
     TipService(GtkWindow* window, Settings* settings);
     ~TipService();
@@ -95,8 +115,14 @@ public:
      * Nothing happens when the user has already put this tip away, when the tips are turned off, or
      * when this window has no service. A tip that is offered while another one is up takes its
      * place: tips never stack.
+     *
+     * @p turnOff is the action a gesture notice offers beside its dismissal - turning that gesture
+     * off. It is shown as a second button only when there is one to run, so a tip about anything
+     * else is unchanged: a tip never offers a button that would do nothing. Turning a gesture off
+     * can only ever make the application do less, which is why the notice is allowed to offer it at
+     * all; what turns it on again is the settings, not this.
      */
-    void offer(Tip tip, GtkWidget* anchor);
+    void offer(Tip tip, GtkWidget* anchor, TurnOffAction turnOff = {});
     /// Put the tip away, and remember that this user has seen it.
     void dismiss();
     auto isShown() const -> bool;
@@ -105,6 +131,8 @@ public:
     [[maybe_unused]] auto getPopover() const -> GtkWidget*;
     /// The button a keyboard user reaches to put the tip away.
     auto getDismissButton() const -> GtkWidget*;
+    /// The button that turns the gesture off, where the tip offers one. Hidden otherwise.
+    auto getTurnOffButton() const -> GtkWidget*;
 
 private:
     void placeAgainst(GtkWidget* anchor);
@@ -116,6 +144,10 @@ private:
     xoj::util::WidgetSPtr popover;
     xoj::util::WidgetSPtr text;
     xoj::util::WidgetSPtr dismissButton;
+    xoj::util::WidgetSPtr turnOffButton;
+
+    /// What the notice about a gesture offers to run, empty when it offers nothing.
+    TurnOffAction turnOff;
 
     /// Which tip is up, which is not the same as what the popover shows: the popover is built once.
     std::optional<Tip> shown;

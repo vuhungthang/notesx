@@ -46,6 +46,7 @@
 #include "gui/PdfFloatingToolbox.h"                              // for PdfF...
 #include "gui/QuickPaletteContents.h"                            // for quickPaletteAvailable (Plan 008)
 #include "gui/SearchBar.h"                                       // for Sear...
+#include "gui/TipService.h"                                      // for TipService (Plan 008)
 #include "gui/XournalView.h"                                     // for Xour...
 #include "gui/XournalppCursor.h"                                 // for Xour...
 #include "gui/dialog/AboutDialog.h"                              // for Abou...
@@ -703,6 +704,41 @@ void Control::showCommandPalette() {
 void Control::showShortcutReference() {
     xoj_assert(this->win != nullptr);
     this->win->showShortcutReference();
+}
+
+void Control::reportGestureCommitted(xoj::gesture::GestureKind kind) {
+    xoj_assert(this->win != nullptr);
+
+    // A user who has switched the notices off is not told anything. What the user has already been
+    // told is not this method's business: the tip service remembers that per tip id.
+    if (!this->settings->getGestureSettings().feedbackEnabled) {
+        return;
+    }
+
+    // The notice is keyed on the kind of the gesture that acted, so a gesture that becomes able to
+    // act gets its notice without anything new here.
+    const xoj::gui::TipService::Tip tip = kind == xoj::gesture::GestureKind::Circle ?
+                                                  xoj::gui::TipService::Tip::GestureCircleToSelect :
+                                                  xoj::gui::TipService::Tip::GestureScribbleToErase;
+
+    // Anchored inside the window, not to the window: a popover is placed against a child of its
+    // window, which is where the service places its own.
+    GtkWidget* anchor = gtk_bin_get_child(GTK_BIN(this->win->getWindow()));
+    if (anchor == nullptr) {
+        return;
+    }
+
+    xoj::gui::TipService::offerAt(anchor, tip, [this, kind]() { this->turnGestureOff(kind); });
+}
+
+void Control::turnGestureOff(xoj::gesture::GestureKind kind) {
+    xoj::gesture::GestureSettings gesture = this->settings->getGestureSettings();
+    if (kind == xoj::gesture::GestureKind::Circle) {
+        gesture.circleToSelectEnabled = false;
+    } else {
+        gesture.scribbleToEraseEnabled = false;
+    }
+    this->settings->setGestureSettings(gesture);
 }
 
 void Control::showQuickPalette() {

@@ -202,6 +202,14 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos, double zo
             this->viewPool->dispatchAndClear(xoj::view::StrokeToolView::CANCELLATION_REQUEST,
                                              Range(this->stroke->getBoundingBox()));
             stroke.reset();
+
+            /*
+             * Plan 008, step 7: say so, once, and offer to turn this gesture off. This is the only
+             * place a gesture commits, so it is the only place a notice is offered - and reaching
+             * here means the action ran with an undo record behind it, because OrdinaryInk is what
+             * every path without one returns. Nothing is said about a gesture that did not act.
+             */
+            control->reportGestureCommitted(committed.kind);
             return;
         }
     }
