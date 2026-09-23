@@ -175,6 +175,19 @@ public:
     /// @param accelerator Accelerator key
     /// @param parentPath Submenu path (e.g., "File/Tools"), empty = root
     /// @return Internal ID, can e.g. be used to disable the menu
+    ///
+    /// Plan 007: an entry registered here is a command in the command palette without the plugin
+    /// doing anything about it. The palette reads the menu the entry is on, so the label above is
+    /// what the user searches for, the menu the entries hang under (the Plugins menu) is the
+    /// category, and activating the command runs the action this method creates - the same GAction
+    /// the menu entry itself activates.
+    ///
+    /// What a plugin cannot do is say more than that. There is nowhere in this API for a synonym, a
+    /// category of the plugin's own, an icon or a stable id, so a plugin's commands are searched by
+    /// their label alone and grouped with every other plugin's. Adding that is a new plugin API
+    /// version, not a field on this one: a future version adds a registration entry point that takes
+    /// the command metadata (keywords, category, icon, id) and leaves this signature and its
+    /// behaviour as they are, so plugins written against this version keep working unchanged.
     auto registerMenu(std::string label, std::string callback, ptrdiff_t mode, std::string accelerator,
                       std::string parentPath = "") -> size_t;
 

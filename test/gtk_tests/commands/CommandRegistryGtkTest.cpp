@@ -302,15 +302,100 @@ void aKeywordFindsAnActionCalledSomethingElse(ApplicationCommands& test) {
     EXPECT_EQ(commands.all()[ranked.front()].metadata.id, "app.preferences");
 }
 
+/**
+ * Plan 007, step 1: what a plugin's commands are worth in the palette, and what they cannot be.
+ *
+ * A plugin registers a menu entry and nothing else, and that is enough for the palette: the registry
+ * reads the menu the entry is on - the Plugin submenu PluginsSubmenu adds to the menu bar holds one
+ * submenu per plugin, and each plugin holds its own entries - so the label is the title, the menu
+ * they hang under ("Plugin") is the category, and activating the command runs the action the plugin
+ * was given. No plugin metadata is invented, and none can be declared: there is nowhere in the plugin
+ * API for a synonym, a category of its own or an icon, which is the documented future extension this
+ * test pins down as absent rather than pretending it is there.
+ */
+auto submenuWithLabel(GMenuModel* model, const std::string& label) -> GMenuModel* {
+    const int count = g_menu_model_get_n_items(model);
+    for (int index = 0; index < count; index++) {
+        GMenuModel* submenu = g_menu_model_get_item_link(model, index, G_MENU_LINK_SUBMENU);
+        gchar* itemLabel = nullptr;
+        const bool labelled =
+                g_menu_model_get_item_attribute(model, index, G_MENU_ATTRIBUTE_LABEL, "s", &itemLabel) && itemLabel;
+        const bool matched = submenu != nullptr && labelled && label == itemLabel;
+        g_free(itemLabel);
+        if (matched) {
+            return submenu;
+        }
+        if (submenu != nullptr) {
+            g_object_unref(submenu);
+        }
+    }
+    return nullptr;
+}
+
+void pluginCommandsComeFromTheMenuTheyAreOn(ApplicationCommands& test) {
+    // The Plugin section of the menu is walked like any other part of it: it is a command the palette
+    // offers, without the plugin manager having to know that a palette exists.
+    CommandRegistry commands = test.registry();
+    const CommandEntry* pluginManager = commands.findById("win.plugin-manager");
+    ASSERT_NE(pluginManager, nullptr) << "the Plugin section of the menu is a command like any other";
+    EXPECT_EQ(pluginManager->metadata.category, "Plugin") << "the submenu it sits in is its category";
+
+    /*
+     * Now a plugin registers an entry, which is the whole of what a plugin does: Plugin::registerMenu
+     * writes a menu item named "win.plugins.action-N" under the plugin's own submenu and adds an
+     * action of that name to the window. The action and the menu item are built here the way that
+     * code builds them; what is under test is that the registry reads the result.
+     */
+    bool ran = false;
+    xoj::util::GObjectSPtr<GSimpleAction> action(g_simple_action_new("plugins.action-0", nullptr), xoj::util::adopt);
+    g_signal_connect(action.get(), "activate",
+                     G_CALLBACK(+[](GSimpleAction*, GVariant*, gpointer flag) { *static_cast<bool*>(flag) = true; }),
+                     &ran);
+    g_action_map_add_action(G_ACTION_MAP(test.win->getWindow()), G_ACTION(action.get()));
+
+    xoj::util::GObjectSPtr<GMenuModel> pluginSection(submenuWithLabel(test.win->getMenuModel(), "Plugin"),
+                                                     xoj::util::adopt);
+    ASSERT_NE(pluginSection.get(), nullptr) << "the Plugin submenu the plugin entries hang under";
+
+    xoj::util::GObjectSPtr<GMenu> pluginMenu(g_menu_new(), xoj::util::adopt);
+    xoj::util::GObjectSPtr<GMenuItem> pluginEntry(g_menu_item_new("My plugin entry", "win.plugins.action-0"),
+                                                  xoj::util::adopt);
+    g_menu_append_item(pluginMenu.get(), pluginEntry.get());
+    xoj::util::GObjectSPtr<GMenuItem> pluginSubmenu(
+            g_menu_item_new_submenu("Test Plugin", G_MENU_MODEL(pluginMenu.get())), xoj::util::adopt);
+    g_menu_append_item(G_MENU(pluginSection.get()), pluginSubmenu.get());
+
+    // The registry is built from the menu as it is now: a plugin that registers an entry while the
+    // application runs is in the palette the next time it is opened.
+    CommandRegistry afterRegistration = test.registry();
+    const CommandEntry* entry = afterRegistration.findById("win.plugins.action-0");
+    ASSERT_NE(entry, nullptr) << "a plugin's menu entry is a command without the plugin knowing";
+    EXPECT_EQ(entry->metadata.title, "My plugin entry") << "the label the plugin gave it is the title";
+    EXPECT_EQ(entry->metadata.category, "Plugin") << "and the Plugin menu is the category there is";
+    EXPECT_EQ(entry->scope, xoj::command::ActionScope::WINDOW);
+
+    // Nothing is declared for it and nothing is invented: no synonyms, no shortcut of its own, and no
+    // ActionDatabase entry to take any from - which is exactly the metadata the plugin API has no way
+    // to express yet.
+    EXPECT_FALSE(entry->knownAction.has_value());
+    EXPECT_TRUE(entry->metadata.keywords.empty()) << "a plugin cannot declare synonyms today";
+    EXPECT_TRUE(entry->metadata.accelerator.empty()) << "the plugin declared no accelerator for it";
+
+    const CommandRegistry::Maps maps = test.maps();
+    EXPECT_TRUE(CommandRegistry::isEnabled(*entry, maps));
+    EXPECT_TRUE(CommandRegistry::activate(*entry, maps));
+    EXPECT_TRUE(ran) << "activating the command runs the plugin's own action";
+}
+
 INSTANTIATE_TEST_SUITE_P(
         CommandScenarios, ApplicationCommands,
-        ::testing::Values(CommandScenario{"realMenuIsComplete", &realMenuIsComplete},
-                          CommandScenario{"acceleratorFollowsTheLiveAction", &acceleratorFollowsTheLiveAction},
-                          CommandScenario{"activatingAMenuCommandRunsTheToolItNames",
-                                          &activatingAMenuCommandRunsTheToolItNames},
-                          CommandScenario{"aCommandSaysWhyItCannotBeUsed", &aCommandSaysWhyItCannotBeUsed},
-                          CommandScenario{"aKeywordFindsAnActionCalledSomethingElse",
-                                          &aKeywordFindsAnActionCalledSomethingElse}));
+        ::testing::Values(
+                CommandScenario{"realMenuIsComplete", &realMenuIsComplete},
+                CommandScenario{"acceleratorFollowsTheLiveAction", &acceleratorFollowsTheLiveAction},
+                CommandScenario{"activatingAMenuCommandRunsTheToolItNames", &activatingAMenuCommandRunsTheToolItNames},
+                CommandScenario{"aCommandSaysWhyItCannotBeUsed", &aCommandSaysWhyItCannotBeUsed},
+                CommandScenario{"aKeywordFindsAnActionCalledSomethingElse", &aKeywordFindsAnActionCalledSomethingElse},
+                CommandScenario{"pluginCommandsComeFromTheMenuTheyAreOn", &pluginCommandsComeFromTheMenuTheyAreOn}));
 
 /*
  * The whole test runs inside `ApplicationCommands::runTest()`, which GtkTest invokes once the

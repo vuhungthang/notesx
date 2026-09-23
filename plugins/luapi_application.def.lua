@@ -119,6 +119,13 @@ function app.openDialog(message, options, cb, error) end
 --- The parentPath parameter creates submenu hierarchy. Without it, the menu item appears directly in the Plugins menu.
 --- With parentPath, the item is placed under a nested submenu path. For example, parentPath="Tools/Custom"
 --- creates "Plugins > [plugin name] > Tools > Custom > [menu item]".
+--- 
+--- The command palette (Ctrl+K) offers the menu items registered this way as commands: the label is
+--- what the user searches for and the command runs this callback. There is no way to declare more
+--- than that - no synonyms, no category of the plugin's own, no icon, no stable id - so a plugin's
+--- commands are found by their label and grouped under "Plugin" with the other plugins'. Declaring
+--- that metadata is a future plugin API version, which will add its own registration entry point and
+--- leave this one working as it does today.
 function app.registerUi(opts) end
 
 --- *
