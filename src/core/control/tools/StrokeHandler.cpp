@@ -9,17 +9,19 @@
 
 #include <gdk/gdk.h>  // for GdkEventKey
 
-#include "control/Control.h"                                // for Control
-#include "control/ToolEnums.h"                              // for DRAWING_TYPE_ST...
-#include "control/ToolHandler.h"                            // for ToolHandler
-#include "control/layer/LayerController.h"                  // for LayerController
-#include "control/settings/Settings.h"                      // for Settings
-#include "control/settings/SettingsEnums.h"                 // for EmptyLastPageAppendType
-#include "control/shaperecognizer/ShapeRecognizer.h"        // for ShapeRecognizer
-#include "control/tools/InputHandler.h"                     // for InputHandler::P...
-#include "control/tools/SnapToGridInputHandler.h"           // for SnapToGridInput...
-#include "gui/inputdevices/PositionInputData.h"             // for PositionInputData
-#include "model/Document.h"                                 // for Document
+#include "control/Control.h"                          // for Control
+#include "control/ToolEnums.h"                        // for DRAWING_TYPE_ST...
+#include "control/ToolHandler.h"                      // for ToolHandler
+#include "control/gestures/GestureCommit.h"           // for commitStylusGesture (Plan 008)
+#include "control/gestures/GestureStroke.h"           // for GestureStroke, StrokePoint (Plan 008)
+#include "control/layer/LayerController.h"            // for LayerController
+#include "control/settings/Settings.h"                // for Settings
+#include "control/settings/SettingsEnums.h"           // for EmptyLastPageAppendType
+#include "control/shaperecognizer/ShapeRecognizer.h"  // for ShapeRecognizer
+#include "control/tools/InputHandler.h"               // for InputHandler::P...
+#include "control/tools/SnapToGridInputHandler.h"     // for SnapToGridInput...
+#include "gui/inputdevices/PositionInputData.h"       // for PositionInputData
+#include "model/Document.h"                           // for Document
 #include "model/Element.h"
 #include "model/Layer.h"                                    // for Layer
 #include "model/LineStyle.h"                                // for LineStyle
@@ -93,7 +95,7 @@ void StrokeHandler::paintTo(Point point) {
              * Both device and tool are pressure sensitive
              */
             if (const double widthDelta = point.z - endPoint.z;
-                - widthDelta > MAX_WIDTH_VARIATION || widthDelta > MAX_WIDTH_VARIATION) {
+                -widthDelta > MAX_WIDTH_VARIATION || widthDelta > MAX_WIDTH_VARIATION) {
                 /**
                  * If the width variation is to big, decompose into shorter segments.
                  * Those segments can not be shorter than PIXEL_MOTION_THRESHOLD
@@ -167,6 +169,42 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos, double zo
     finalizeStroke(pos.pressure);
 
     Layer* layer = page->getSelectedLayer();
+
+    /*
+     * Plan 008: a recognised stylus gesture takes the finished stroke before it becomes ordinary
+     * ink. This is the one place the completed stroke is in hand and the document is reachable on
+     * the main thread; recognition itself is a pure function of the stroke, and the document is
+     * touched only for the lookup and the one undoable action.
+     *
+     * Nothing runs unless the user turned a gesture on - circle-to-select and scribble-to-erase
+     * are both off by default - so with the settings as they ship the ink is finalized exactly as
+     * it always was. That is the "disabled gestures leave original ink unchanged" requirement,
+     * held by construction: the branch is not entered.
+     */
+    Settings* gestureSettingsOwner = control->getSettings();
+    const xoj::gesture::GestureSettings& gestureSettings = gestureSettingsOwner->getGestureSettings();
+    if (this->stroke->getToolType() == StrokeTool::PEN &&
+        (gestureSettings.circleToSelectEnabled || gestureSettings.scribbleToEraseEnabled)) {
+        std::vector<xoj::gesture::StrokePoint> samples;
+        const std::vector<Point>& points = this->stroke->getPointVector();
+        samples.reserve(points.size());
+        for (const Point& p: points) {
+            samples.push_back(xoj::gesture::StrokePoint{p.x, p.y, 0.0});
+        }
+
+        const xoj::gesture::GestureCommitResult committed = xoj::gesture::commitStylusGesture(
+                gestureSettings, *control, page, layer, xoj::gesture::GestureStroke(std::move(samples)));
+
+        if (committed.outcome == xoj::gesture::GestureCommitOutcome::Committed) {
+            // The gesture consumed the ink: drop its views the way a cancelled sequence does, and
+            // insert neither the stroke nor an undo record for it. The gesture's own undo record
+            // (for a scribble, the one DeleteUndoAction) is already in the history.
+            this->viewPool->dispatchAndClear(xoj::view::StrokeToolView::CANCELLATION_REQUEST,
+                                             Range(this->stroke->getBoundingBox()));
+            stroke.reset();
+            return;
+        }
+    }
 
     UndoRedoHandler* undo = control->getUndoRedoHandler();
     undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
