@@ -168,8 +168,14 @@ auto formatPageRange(const std::vector<size_t>& pages) -> std::string;
  * The copies are inserted from the last page backwards, so the indices of the pages that are
  * still to be duplicated do not move while the copies are being made.
  *
- * @param pages Positions, ascending and without duplicates
- * @return The positions of the copies, ascending
+ * The copies made afterwards do move the ones made before them: the copy of the j-th page
+ * (ascending, 0-based) has j duplicated pages in front of it, and each of them inserts a copy of
+ * its own below itself, so the copy ends up at `pages[j] + 1 + j` rather than at `pages[j] + 1`.
+ * Duplicating the pages at 2 and 4 of a six page document therefore selects the copies at 3 and
+ * 6, which is where the two insertions actually put them.
+ *
+ * @param pages Positions, ascending and without duplicates; anything else is normalized first
+ * @return The positions of the copies, ascending, one per page
  */
 auto duplicatedPageIndices(const std::vector<size_t>& pages) -> std::vector<size_t>;
 

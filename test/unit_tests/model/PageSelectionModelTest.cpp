@@ -10,6 +10,7 @@
  */
 
 #include <cstddef>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -429,12 +430,65 @@ TEST(PageSelectionModel, SetSelectionToNothingLeavesNoAnchor) {
 
 /*
  * Duplicating a noncontiguous selection has to affect exactly the selected pages, and it does that
- * by inserting the copies from the last page backwards.
+ * by inserting the copies from the last page backwards. What those insertions leave behind is what
+ * is checked here: a copy is placed directly below its original, but the copies made afterwards
+ * move the ones made before them, so the position of a copy is not `original + 1` once more than
+ * one page is duplicated.
  */
+namespace {
+
+/// The document `Control::duplicateSelectedPages()` builds, as page identities: the original page p
+/// is `p` and its copy is `pageCount + p`. The copies are inserted from the last selected page
+/// backwards, which is what makes an insertion never move a page still to be duplicated.
+auto documentAfterDuplicating(size_t pageCount, const std::vector<size_t>& pages) -> std::vector<size_t> {
+    std::vector<size_t> document(pageCount);
+    std::iota(document.begin(), document.end(), 0);
+    for (auto it = pages.rbegin(); it != pages.rend(); ++it) {
+        document.insert(document.begin() + static_cast<std::ptrdiff_t>(*it + 1), pageCount + *it);
+    }
+    return document;
+}
+
+}  // namespace
+
 TEST(PageSelectionModel, DuplicatedPagesLandBelowTheirOriginal) {
-    EXPECT_EQ(xoj::model::duplicatedPageIndices({1, 3}), (std::vector<size_t>{2, 4}));
     EXPECT_EQ(xoj::model::duplicatedPageIndices({0}), (std::vector<size_t>{1}));
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({2, 4}), (std::vector<size_t>{3, 6}))
+            << "the copy of 4 is moved down by the copy made below 2";
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({1, 2}), (std::vector<size_t>{2, 4})) << "duplicating adjacent pages";
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({1, 3}), (std::vector<size_t>{2, 5}));
     EXPECT_EQ(xoj::model::duplicatedPageIndices({}), (std::vector<size_t>{}));
+}
+
+/// The indices have to name the pages the insertions actually created, whatever the selection.
+TEST(PageSelectionModel, DuplicatedPageIndicesNameTheCopiesTheInsertionsCreated) {
+    const std::vector<std::vector<size_t>> selections = {{0},    {3},    {0, 1},    {1, 2},       {2, 4},
+                                                         {0, 5}, {1, 3}, {0, 2, 4}, {0, 1, 2, 3}, {0, 1, 2, 3, 4, 5}};
+
+    for (const std::vector<size_t>& pages: selections) {
+        const std::vector<size_t> document = documentAfterDuplicating(6, pages);
+        const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(pages);
+
+        ASSERT_EQ(copies.size(), pages.size()) << "one copy per duplicated page";
+        for (size_t i = 0; i < copies.size(); i++) {
+            ASSERT_LT(copies[i], document.size());
+            EXPECT_EQ(document[copies[i]], 6 + pages[i]) << "the index named for page " << pages[i] << " is its copy";
+
+            // ... and that copy sits directly below the page it copies: no other insertion came
+            // between the two, whatever the earlier copies did to the indices.
+            ASSERT_GT(copies[i], 0U);
+            EXPECT_EQ(document[copies[i] - 1], pages[i]) << "the copy of page " << pages[i] << " is below it";
+        }
+
+        // No original was duplicated away or lost: the document still holds all six, in order.
+        std::vector<size_t> originals;
+        for (size_t page: document) {
+            if (page < 6) {
+                originals.push_back(page);
+            }
+        }
+        EXPECT_EQ(originals, (std::vector<size_t>{0, 1, 2, 3, 4, 5})) << "the originals are all still there";
+    }
 }
 
 TEST(PageSelectionModel, DuplicatingEveryPageDoublesTheDocument) {
@@ -443,10 +497,18 @@ TEST(PageSelectionModel, DuplicatingEveryPageDoublesTheDocument) {
 
     const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(model.getSelection());
 
-    EXPECT_EQ(copies, (std::vector<size_t>{1, 2, 3, 4}));
+    EXPECT_EQ(copies, (std::vector<size_t>{1, 3, 5, 7}));
 
     // Each copy sits directly below the page it copies, and every original is still where it was.
     for (size_t original = 0; original < copies.size(); original++) {
-        EXPECT_EQ(copies[original], original + 1);
+        EXPECT_EQ(copies[original], 2 * original + 1) << "the copy of page " << original;
     }
+
+    const std::vector<size_t> document = documentAfterDuplicating(4, model.getSelection());
+    EXPECT_EQ(document, (std::vector<size_t>{0, 4, 1, 5, 2, 6, 3, 7}))
+            << "the document alternates an original and its copy";
+}
+
+TEST(PageSelectionModel, DuplicatingNormalizesItsInput) {
+    EXPECT_EQ(xoj::model::duplicatedPageIndices({4, 2, 4}), (std::vector<size_t>{3, 6}));
 }

@@ -285,10 +285,16 @@ auto formatPageRange(const std::vector<size_t>& pages) -> std::string {
 auto duplicatedPageIndices(const std::vector<size_t>& pages) -> std::vector<size_t> {
     // Duplicating from the last page backwards: an insertion below a page never moves a page that
     // comes before it, so every copy lands directly below the page it copies.
+    std::vector<size_t> sorted = pages;
+    std::sort(sorted.begin(), sorted.end());
+    sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
+
+    // The insertions still move each other, though: the copy of the j-th page has j duplicated
+    // pages in front of it, and each of those inserts a copy below itself before this one is made.
     std::vector<size_t> copies;
-    copies.reserve(pages.size());
-    for (size_t page: pages) {
-        copies.push_back(page + 1);
+    copies.reserve(sorted.size());
+    for (size_t j = 0; j < sorted.size(); ++j) {
+        copies.push_back(sorted[j] + 1 + j);
     }
     return copies;
 }
