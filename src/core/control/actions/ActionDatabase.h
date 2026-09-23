@@ -10,6 +10,10 @@
  */
 #pragma once
 
+#include <optional>  // for optional
+#include <string>    // for string
+#include <vector>    // for vector
+
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 
@@ -68,6 +72,17 @@ public:
     void enableAction(Action a, bool enable);
     ActionRef getAction(Action a) const;
     bool isActionEnabled(Action a) const;
+
+    /**
+     * Plan 007: the words the action declares for a command search, beside the title the menu shows it
+     * under. Empty for an action that declares none, which is most of them.
+     */
+    auto getKeywords(Action a) const -> std::vector<std::string>;
+    /**
+     * Plan 007: why the action says it cannot be used at the moment, or nothing when it says nothing.
+     * Only meaningful while the action is disabled: the reason and the enabled state have to agree.
+     */
+    auto getDisabledReason(Action a) const -> std::optional<std::string>;
 
     /// Disables every action
     void disableAll();

@@ -168,7 +168,12 @@ void CommandRegistry::addMenuLevel(GMenuModel* model, const std::string& categor
         entry.scope = parsed.scope;
         entry.action = parsed.name;
         entry.target = std::move(parsed.target);
-        if (const std::optional<Action> known = Action_fromString(entry.action); known && parsed.scope == ActionScope::WINDOW) {
+        /*
+         * Whether the action lives in the window's namespace or the application's is written on the
+         * action database, not on the menu entry; what a known action buys a command here is its
+         * keywords and the reason it gives for being unavailable.
+         */
+        if (const std::optional<Action> known = Action_fromString(entry.action)) {
             entry.knownAction = known;
         }
 

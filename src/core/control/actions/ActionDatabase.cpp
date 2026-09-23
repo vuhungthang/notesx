@@ -1,7 +1,11 @@
 #include "ActionDatabase.h"
 
+#include <array>
+#include <optional>
+#include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gobject/gsignal.h>
 
@@ -26,6 +30,52 @@ struct InitiallyEnabled<a, std::void_t<decltype(&ActionProperties<a>::initiallyE
         db->enableAction(a, ActionProperties<a>::initiallyEnabled(ctrl));
     }
 };
+
+/// Plan 007: the words an action declares for a command search, beside the title the menu shows it under.
+template <Action a>
+static auto declaredKeywords() -> std::vector<std::string> {
+    std::vector<std::string> words;
+    if constexpr (has_keywords<a>::value) {
+        for (const char* const* word = ActionProperties<a>::keywords; *word != nullptr; word++) {
+            words.emplace_back(*word);
+        }
+    }
+    return words;
+}
+
+/// Plan 007: why an action says it cannot be used at the moment, for the actions that say anything.
+template <Action a>
+static auto declaredDisabledReason(Control* ctrl) -> std::optional<std::string> {
+    if constexpr (has_disabled_reason<a>::value) {
+        return ActionProperties<a>::disabledReason(ctrl);
+    } else {
+        return std::nullopt;
+    }
+}
+
+/// One entry per action, gathered at compile time so that reading one is a lookup and not a walk.
+template <size_t... As>
+static auto keywordTable(std::index_sequence<As...>) {
+    using Getter = std::vector<std::string> (*)();
+    return std::array<Getter, sizeof...(As)>{&declaredKeywords<static_cast<Action>(As)>...};
+}
+template <size_t... As>
+static auto disabledReasonTable(std::index_sequence<As...>) {
+    using Getter = std::optional<std::string> (*)(Control*);
+    return std::array<Getter, sizeof...(As)>{&declaredDisabledReason<static_cast<Action>(As)>...};
+}
+
+static constexpr size_t ACTION_COUNT = xoj::to_underlying(Action::ENUMERATOR_COUNT);
+
+auto ActionDatabase::getKeywords(Action a) const -> std::vector<std::string> {
+    static const auto table = keywordTable(std::make_index_sequence<ACTION_COUNT>());
+    return table[xoj::to_underlying(a)]();
+}
+
+auto ActionDatabase::getDisabledReason(Action a) const -> std::optional<std::string> {
+    static const auto table = disabledReasonTable(std::make_index_sequence<ACTION_COUNT>());
+    return table[xoj::to_underlying(a)](this->control);
+}
 
 
 class ActionDatabase::Populator {

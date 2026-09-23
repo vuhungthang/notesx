@@ -487,3 +487,28 @@ TEST(CommandRegistryTest, testACommandCanSayWhyItIsUnavailable) {
     enabledMaps.window = enabled.map();
     EXPECT_FALSE(registry.disabledReason(*command, enabledMaps).has_value());
 }
+
+/**
+ * An action of the application is an action of the action database like any other: which namespace
+ * it is registered in is the database's business, and the keywords and the reason are looked up by
+ * the action, not by the namespace the menu entry happens to write.
+ */
+TEST(CommandRegistryTest, testAnApplicationActionIsKnownLikeAnyOther) {
+    xoj::util::GObjectSPtr<GMenu> root(g_menu_new(), xoj::util::adopt);
+    g_menu_append_item(root.get(), item("Preferences", "app.preferences"));
+
+    CommandRegistry registry({}, {},
+                             [](const xoj::command::CommandEntry& entry) -> std::vector<std::string> {
+                                 return entry.knownAction == Action::PREFERENCES
+                                                ? std::vector<std::string>{"settings"}
+                                                : std::vector<std::string>{};
+                             });
+    registry.addFromMenuModel(G_MENU_MODEL(root.get()));
+
+    const auto* command = registry.findById("app.preferences");
+    ASSERT_NE(command, nullptr);
+    EXPECT_EQ(command->scope, ActionScope::APPLICATION);
+    EXPECT_EQ(command->knownAction, Action::PREFERENCES);
+    EXPECT_EQ(command->metadata.keywords, (std::vector<std::string>{"settings"}))
+            << "the keywords of an application action are read as well as those of a window action";
+}

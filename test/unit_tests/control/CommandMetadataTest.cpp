@@ -172,6 +172,20 @@ TEST(AcceleratorDisplayTest, testModifiersAreRenderedForThePlatform) {
     EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Alt>Left", MAC), "\u2325Left");
 }
 
+/**
+ * GTK hands back "<Primary>z" for anything registered as "<Ctrl>Z" - it spells the control key of
+ * this platform as the primary modifier - so the reference has to read it the way the menu does and
+ * not as the Super key. On macOS the same modifier is the command key.
+ */
+TEST(AcceleratorDisplayTest, testThePrimaryModifierIsSpeltForThePlatform) {
+    EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Primary>z", LINUX), "Ctrl+Z");
+    EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Primary><Shift>u", LINUX), "Ctrl+Shift+U");
+    EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Primary>Z", LINUX), "Ctrl+Z");
+
+    EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Primary>z", MAC), "\u2318Z");
+    EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("<Primary><Shift>u", MAC), "\u21e7\u2318U");
+}
+
 TEST(AcceleratorDisplayTest, testASingleKeyIsRenderedAsItself) {
     EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("Delete", LINUX), "Delete");
     EXPECT_EQ(xoj::command::formatAcceleratorForDisplay("F5", LINUX), "F5");

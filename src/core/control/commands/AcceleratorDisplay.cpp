@@ -73,7 +73,7 @@ struct Modifiers {
     std::vector<std::string> others;  ///< modifiers with no convention of their own, in order
 };
 
-auto modifiersOf(const std::vector<std::string>& names) -> Modifiers {
+auto modifiersOf(const std::vector<std::string>& names, AcceleratorPlatform platform) -> Modifiers {
     Modifiers modifiers;
     for (const std::string& name: names) {
         if (name == "ctrl" || name == "control") {
@@ -82,7 +82,19 @@ auto modifiersOf(const std::vector<std::string>& names) -> Modifiers {
             modifiers.shift = true;
         } else if (name == "alt" || name == "mod1") {
             modifiers.alt = true;
-        } else if (name == "meta" || name == "super" || name == "mod4" || name == "primary") {
+        } else if (name == "primary") {
+            /*
+             * "Primary" is the modifier GTK registers this platform's control key under: an action
+             * whose accelerator is written "<Ctrl>Z" is handed back by GTK as "<Primary>z". On
+             * macOS the same modifier is the command key, which is why this is the one modifier
+             * that cannot be decided without the platform.
+             */
+            if (platform == AcceleratorPlatform::MACOS) {
+                modifiers.command = true;
+            } else {
+                modifiers.control = true;
+            }
+        } else if (name == "meta" || name == "super" || name == "mod4") {
             modifiers.command = true;
         } else if (name == "hyper") {
             modifiers.hyper = true;
@@ -113,7 +125,7 @@ auto formatAcceleratorForDisplay(std::string_view gtkAccelerator, AcceleratorPla
         return {};
     }
 
-    const Modifiers modifiers = modifiersOf(modifierNames);
+    const Modifiers modifiers = modifiersOf(modifierNames, platform);
     const std::string shownKey = displayKey(key);
 
     if (platform == AcceleratorPlatform::MACOS) {

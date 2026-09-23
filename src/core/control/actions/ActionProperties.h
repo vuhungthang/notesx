@@ -4,6 +4,9 @@
  */
 #pragma once
 
+#include <algorithm>
+#include <optional>
+#include <string>
 #include <type_traits>
 
 #include <control/tools/TextEditor.h>
@@ -50,6 +53,13 @@
  *          Defaults to [](Control*){return true;}
  *      * (optional) a member type app_namespace = std::true_type if the action should be added to the app. namespace
  *          Otherwise, it is added to the win. namespace
+ *      * (optional) a member static constexpr const char* keywords[] = {"word1", "word2", nullptr} for words a
+ *          command search may use to find the action beside the title the menu shows (Plan 007)
+ *      * (optional) a static member function
+ *              static std::optional<std::string> disabledReason(Control*);
+ *          Why the action cannot be used at the moment, in the user's words. The command palette shows it under
+ *          the title of a command that is disabled, so the reason has to agree with the enabled state: it is
+ *          only read while the action is disabled.
  *
  * Note that both state_type and parameter_type must be convertible to GVariant. See util/GVariantTemplate.h
  */
@@ -71,6 +81,18 @@ template <Action a, class U = void>
 struct has_state: std::false_type {};
 template <Action a>
 struct has_state<a, std::void_t<typename ActionProperties<a>::state_type>>: std::true_type {};
+
+/// Plan 007: true if the action declares the words a command search may use beside its title.
+template <Action a, class U = void>
+struct has_keywords: std::false_type {};
+template <Action a>
+struct has_keywords<a, std::void_t<decltype(ActionProperties<a>::keywords)>>: std::true_type {};
+
+/// Plan 007: true if the action explains why it cannot be used.
+template <Action a, class U = void>
+struct has_disabled_reason: std::false_type {};
+template <Action a>
+struct has_disabled_reason<a, std::void_t<decltype(&ActionProperties<a>::disabledReason)>>: std::true_type {};
 
 
 /*** SPECIALIZATIONS ***/
@@ -260,6 +282,8 @@ template <>
 struct ActionProperties<Action::PREFERENCES> {
     using app_namespace = std::true_type;
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showSettings(); }
+    // Plan 007: the words people look for this by, none of which is in the title the menu shows.
+    static constexpr const char* keywords[] = {"settings", "options", nullptr};
 };
 
 
@@ -385,6 +409,7 @@ struct ActionProperties<Action::MANAGE_TOOLBAR> {
 template <>
 struct ActionProperties<Action::CUSTOMIZE_TOOLBAR> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->customizeToolbars(); }
+    static constexpr const char* keywords[] = {"toolbar", "editor", nullptr};
 };
 template <>
 struct ActionProperties<Action::SHOW_MENUBAR> {
@@ -543,10 +568,27 @@ struct ActionProperties<Action::DUPLICATE_PAGE> {
 template <>
 struct ActionProperties<Action::MOVE_PAGE_TOWARDS_BEGINNING> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->movePageTowardsBeginning(); }
+    /// Plan 007: the page the action acts on, which updatePageActions() takes the selection for.
+    static auto disabledReason(Control* ctrl) -> std::optional<std::string> {
+        const auto& selection = ctrl->getPageSelection().getSelection();
+        const size_t first = selection.empty() ? ctrl->getCurrentPageNo() : selection.front();
+        if (first != npos && first != 0) {
+            return std::nullopt;
+        }
+        return _("It already is the first page of the document");
+    }
 };
 template <>
 struct ActionProperties<Action::MOVE_PAGE_TOWARDS_END> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->movePageTowardsEnd(); }
+    static auto disabledReason(Control* ctrl) -> std::optional<std::string> {
+        const auto& selection = ctrl->getPageSelection().getSelection();
+        const size_t last = selection.empty() ? ctrl->getCurrentPageNo() : selection.back();
+        if (last != npos && last + 1 < ctrl->getDocument()->getPageCount()) {
+            return std::nullopt;
+        }
+        return _("It already is the last page of the document");
+    }
 };
 
 template <>
@@ -560,11 +602,24 @@ struct ActionProperties<Action::CONFIGURE_PAGE_TEMPLATE> {
 template <>
 struct ActionProperties<Action::DELETE_PAGE> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->deletePage(); }
+    /**
+     * Plan 007: Control::updatePageActions() disables this action exactly when the document would keep no page
+     * after the deletion, which the palette then explains.
+     */
+    static auto disabledReason(Control* ctrl) -> std::optional<std::string> {
+        const size_t pages = ctrl->getDocument()->getPageCount();
+        const size_t selected = std::max<size_t>(ctrl->getPageSelection().getSelection().size(), 1);
+        if (pages > selected) {
+            return std::nullopt;
+        }
+        return _("This would leave the document without any page");
+    }
 };
 
 template <>
 struct ActionProperties<Action::PAPER_FORMAT> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->paperFormat(); }
+    static constexpr const char* keywords[] = {"page size", "paper size", nullptr};
 };
 template <>
 struct ActionProperties<Action::PAPER_BACKGROUND_COLOR> {
@@ -942,6 +997,7 @@ struct ActionProperties<Action::PLUGIN_MANAGER> {
 template <>
 struct ActionProperties<Action::HELP> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { XojMsgBox::showHelp(ctrl->getGtkWindow()); }
+    static constexpr const char* keywords[] = {"manual", "documentation", nullptr};
 };
 
 template <>
