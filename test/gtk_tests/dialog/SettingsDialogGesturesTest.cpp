@@ -51,6 +51,14 @@ void drain() {
     }
 }
 
+/// Let GTK finish what it queued, so a widget rebuilt by a signal has settled.
+void settle() {
+    for (int i = 0; i < 4; i++) {
+        while (g_main_context_iteration(nullptr, FALSE)) {}
+        g_usleep(20000);
+    }
+}
+
 /// The widget whose glade id this is, wherever it sits in the dialog.
 ///
 /// A builder id is not the widget's GObject name - glade only sets that when the file also gives a
@@ -328,3 +336,38 @@ class SettingsDialogGestureResetTest: public GtkTest {
     }
 };
 TEST_F(SettingsDialogGestureResetTest, theResetButtonGoesBackToTheDefaultsWithoutStoringThem) {}
+
+/*
+ * Plan 008, step 7: the gesture reference, on the page the gestures are set on, read from the live
+ * settings rather than written down - so it says what the application would do, and it moves when a
+ * control moves.
+ */
+class SettingsDialogGestureReferenceTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        SettingsDialogCase dialogCase(app, [](Settings* settings) {
+            GestureSettings gesture = GestureSettings::defaults();
+            gesture.circleToSelectEnabled = true;  // one of the two is on, so both states are readable
+            settings->setGestureSettings(gesture);
+        });
+
+        ASSERT_NE(dialogCase.widget("gestureReferenceList"), nullptr) << "the page has a reference";
+        ASSERT_NE(dialogCase.widget("gestureReferenceRow-circle"), nullptr) << "the circle has a line";
+        ASSERT_NE(dialogCase.widget("gestureReferenceRow-scribble"), nullptr) << "the scribble has a line";
+
+        auto stateOf = [&dialogCase](const char* gesture) {
+            GtkWidget* label = dialogCase.widget(gesture);
+            return label == nullptr ? std::string{} : std::string(gtk_label_get_text(GTK_LABEL(label)));
+        };
+
+        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "On") << "the reference reads what the profile holds";
+        EXPECT_EQ(stateOf("gestureReferenceState-scribble"), "Off") << "a gesture nobody can reach says so";
+
+        // Live: turning the gesture off on the page turns its line off too, without a save.
+        gtk_check_button_set_active(dialogCase.checkbox(CIRCLE_TOGGLE), false);
+        settle();
+
+        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "Off") << "the reference follows the controls";
+        EXPECT_EQ(stateOf("gestureReferenceState-scribble"), "Off");
+    }
+};
+TEST_F(SettingsDialogGestureReferenceTest, theReferenceSaysWhatTheLiveSettingsSay) {}

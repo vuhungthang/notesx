@@ -278,6 +278,65 @@ void SettingsDialog::loadGestureSettings() { this->showGestureSettings(this->set
 void SettingsDialog::updateGestureSensitivity() {
     gtk_widget_set_sensitive(builder.get("spGestureCircleConfidence"), getCheckbox("cbGestureCircleToSelect"));
     gtk_widget_set_sensitive(builder.get("spGestureScribbleConfidence"), getCheckbox("cbGestureScribbleToErase"));
+    // The reference follows the controls, so it is redrawn whenever one of them changes.
+    this->renderGestureReference();
+}
+
+void SettingsDialog::renderGestureReference() {
+    GtkListBox* list = GTK_LIST_BOX(builder.get("gestureReferenceList"));
+    gtk_container_foreach(GTK_CONTAINER(list), +[](GtkWidget* child, gpointer) { gtk_widget_destroy(child); }, nullptr);
+
+    /*
+     * The live state is what the controls say now, not what the profile held when the dialog was
+     * built: a reference that lagged the page it sits on would be a second answer to the same
+     * question.
+     */
+    xoj::gesture::GestureSettings current = this->settings->getGestureSettings();
+    current.circleToSelectEnabled = getCheckbox("cbGestureCircleToSelect");
+    current.scribbleToEraseEnabled = getCheckbox("cbGestureScribbleToErase");
+    current.quickPaletteEnabled = getCheckbox("cbGestureQuickPalette");
+    current.feedbackEnabled = getCheckbox("cbGestureFeedback");
+
+    for (const xoj::gesture::GestureReferenceRow& row: xoj::gesture::buildGestureReference(current)) {
+        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        gtk_widget_set_margin_start(box, 6);
+        gtk_widget_set_margin_end(box, 6);
+        gtk_widget_set_margin_top(box, 4);
+        gtk_widget_set_margin_bottom(box, 4);
+
+        GtkWidget* title = gtk_label_new(row.title.c_str());
+        gtk_widget_set_halign(title, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(title), TRUE);
+        gtk_box_pack_start(GTK_BOX(box), title, FALSE, FALSE, 0);
+
+        // Named after the gesture, and carrying only what the state is, so a test can read it and a
+        // reader can see it at a glance.
+        GtkWidget* state = gtk_label_new(row.enabled ? _("On") : _("Off"));
+        const std::string stateName = "gestureReferenceState-" + row.gestureId;
+        gtk_widget_set_name(state, stateName.c_str());
+        gtk_widget_set_halign(state, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(box), state, FALSE, FALSE, 0);
+
+        GtkWidget* binding = gtk_label_new(row.binding.c_str());
+        gtk_widget_set_halign(binding, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(binding), TRUE);
+        gtk_box_pack_start(GTK_BOX(box), binding, FALSE, FALSE, 0);
+
+        GtkWidget* detail = gtk_label_new(row.detail.c_str());
+        gtk_widget_set_halign(detail, GTK_ALIGN_START);
+        gtk_label_set_line_wrap(GTK_LABEL(detail), TRUE);
+        gtk_box_pack_start(GTK_BOX(box), detail, FALSE, FALSE, 0);
+
+        GtkWidget* listRow = gtk_list_box_row_new();
+        gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(listRow), FALSE);
+        gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(listRow), FALSE);
+        const std::string rowName = "gestureReferenceRow-" + row.gestureId;
+        gtk_widget_set_name(listRow, rowName.c_str());
+        gtk_container_add(GTK_CONTAINER(listRow), box);
+        gtk_list_box_insert(list, listRow, -1);
+    }
+
+    gtk_widget_show_all(GTK_WIDGET(list));
 }
 
 void SettingsDialog::resetGestureSettingsToDefaults() {

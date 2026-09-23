@@ -18,6 +18,7 @@
 #include <gtk/gtk.h>  // for GtkWidget, GtkWindow
 
 #include "audio/DeviceInfo.h"                    // for DeviceInfo
+#include "control/gestures/GestureReference.h"   // for buildGestureReference (Plan 008, step 7)
 #include "control/gestures/GestureSettings.h"    // for GestureSettings (Plan 008, step 2)
 #include "control/settings/SettingsEnums.h"      // for WorkspaceMode
 #include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
@@ -97,6 +98,17 @@ private:
     void saveGestureSettings();
     void updateGestureSensitivity();
     void resetGestureSettingsToDefaults();
+
+    /**
+     * Plan 008, step 7: the gesture reference, on the page the gestures are set on.
+     *
+     * Built from buildGestureReference() over the live state - what the controls on this page say
+     * right now - so what the user reads and what the application will do are the same thing, and it
+     * moves when a control moves. It is a reference rather than a second set of controls: nothing in
+     * it is editable, and it says for each gesture whether it is on, how it is reached and what it
+     * will not do.
+     */
+    void renderGestureReference();
 
     void loadSlider(const char* name, double value);
     double getSlider(const char* name);
