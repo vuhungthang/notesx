@@ -260,4 +260,20 @@ auto findAcceleratorConflicts(const std::vector<CommandMetadata>& commands) -> s
     return conflicts;
 }
 
+auto buildShortcutReference(const std::vector<CommandMetadata>& commands) -> std::vector<ReferenceRow> {
+    const std::vector<AcceleratorConflict> conflicts = findAcceleratorConflicts(commands);
+
+    std::vector<ReferenceRow> reference;
+    reference.reserve(commands.size());
+    for (const CommandMetadata& command: commands) {
+        const bool conflicted =
+                !command.accelerator.empty() &&
+                std::any_of(conflicts.begin(), conflicts.end(), [&command](const AcceleratorConflict& conflict) {
+                    return conflict.accelerator == command.accelerator;
+                });
+        reference.push_back(ReferenceRow{command.id, command.title, command.category, command.accelerator, conflicted});
+    }
+    return reference;
+}
+
 }  // namespace xoj::command

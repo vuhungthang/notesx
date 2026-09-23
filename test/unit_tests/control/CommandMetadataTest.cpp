@@ -230,3 +230,54 @@ TEST(AcceleratorConflictTest, testCommandsWithoutAnAcceleratorDoNotConflict) {
 
     EXPECT_TRUE(xoj::command::findAcceleratorConflicts(commands).empty());
 }
+
+/*
+ * Plan 007, step 5: the shortcut reference, generated from the command metadata.
+ *
+ * The reference is the registry read back - the commands in the order the application puts them in,
+ * each with the keys the application holds for it, and marked where two commands claim the same
+ * keys. Nothing in it is written down a second time, so there is no list to keep in step with
+ * ActionProperties: what an accelerator is here is what the action says it is.
+ */
+TEST(ShortcutReferenceTest, testTheReferenceIsTheRegistryInItsOwnOrderWithItsCategoriesAndKeys) {
+    std::vector<CommandMetadata> commands{command("save", "Save", "File", "Ctrl+S"),
+                                          command("export-as-pdf", "Export as PDF", "File", "Ctrl+E"),
+                                          command("grid-snapping", "Grid Snapping", "View")};
+
+    const std::vector<xoj::command::ReferenceRow> reference = xoj::command::buildShortcutReference(commands);
+    ASSERT_EQ(reference.size(), 3u);
+
+    EXPECT_EQ(reference[0].id, "save");
+    EXPECT_EQ(reference[0].title, "Save");
+    EXPECT_EQ(reference[0].category, "File");
+    EXPECT_EQ(reference[0].accelerator, "Ctrl+S");
+    EXPECT_FALSE(reference[0].conflicted);
+
+    EXPECT_EQ(reference[2].title, "Grid Snapping");
+    EXPECT_EQ(reference[2].category, "View");
+    EXPECT_EQ(reference[2].accelerator, "") << "a command that is on no key says so by having none";
+}
+
+TEST(ShortcutReferenceTest, testBothCommandsOnOneAcceleratorAreMarkedAndStillShowIt) {
+    std::vector<CommandMetadata> commands{command("save", "Save", "File", "Ctrl+S"),
+                                          command("save-current", "Save Current", "File", "Ctrl+S"),
+                                          command("print", "Print", "File", "Ctrl+P")};
+
+    const std::vector<xoj::command::ReferenceRow> reference = xoj::command::buildShortcutReference(commands);
+    ASSERT_EQ(reference.size(), 3u);
+    EXPECT_TRUE(reference[0].conflicted);
+    EXPECT_TRUE(reference[1].conflicted);
+    EXPECT_FALSE(reference[2].conflicted);
+    // The keys are still shown: the reference says what is on what, and which of those clash.
+    EXPECT_EQ(reference[0].accelerator, "Ctrl+S");
+    EXPECT_EQ(reference[1].accelerator, "Ctrl+S");
+}
+
+TEST(ShortcutReferenceTest, testTheReferenceShowsWhateverTheActionNowSaysItsAcceleratorIs) {
+    std::vector<CommandMetadata> before{command("palette", "Command Palette", "Help", "Ctrl+K")};
+    std::vector<CommandMetadata> after{command("palette", "Command Palette", "Help", "Ctrl+Shift+K")};
+
+    EXPECT_EQ(xoj::command::buildShortcutReference(before).front().accelerator, "Ctrl+K");
+    EXPECT_EQ(xoj::command::buildShortcutReference(after).front().accelerator, "Ctrl+Shift+K")
+            << "changing the accelerator changes the reference without touching the reference";
+}

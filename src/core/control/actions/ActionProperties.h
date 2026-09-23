@@ -1015,6 +1015,14 @@ struct ActionProperties<Action::COMMAND_PALETTE> {
 };
 
 template <>
+struct ActionProperties<Action::SHORTCUT_REFERENCE> {
+    static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showShortcutReference(); }
+    /// No accelerator: the reference is read rather than used, and it says what everything else is on.
+    static constexpr const char* accelerators[] = {nullptr};
+    static constexpr const char* keywords[] = {"shortcuts", "keys", "accelerators", "reference", nullptr};
+};
+
+template <>
 struct ActionProperties<Action::DEMO> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showGtkDemo(); }
 };

@@ -72,4 +72,24 @@ auto findAcceleratorConflicts(const std::vector<CommandMetadata>& commands) -> s
  */
 auto foldedForSearch(std::string_view text) -> std::string;
 
+/// One line of the shortcut reference: a command, and the keys the application holds for it.
+struct ReferenceRow {
+    std::string id;           ///< the command the line is about
+    std::string title;        ///< translated title
+    std::string category;     ///< translated group, so the reference can group the way the menus do
+    std::string accelerator;  ///< display form of the keys; empty when the command is on none
+    bool conflicted = false;  ///< more than one command claims those keys
+};
+
+/**
+ * The shortcut reference, generated from the command metadata: the commands in the order the registry
+ * holds them, each with the keys the application holds for it, marked where those keys are claimed
+ * twice.
+ *
+ * Nothing in the reference is written down a second time. What an accelerator is here is what the
+ * action says it is, so changing it in ActionProperties changes the reference - there is no list to
+ * keep in step.
+ */
+auto buildShortcutReference(const std::vector<CommandMetadata>& commands) -> std::vector<ReferenceRow>;
+
 }  // namespace xoj::command

@@ -55,6 +55,11 @@ namespace xoj::command {
 class CommandPalette;
 }
 
+namespace xoj::gui {
+class WorkspaceGuidance;
+class ShortcutReference;
+}  // namespace xoj::gui
+
 typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
 
 class MainWindow: public GladeGui {
@@ -187,6 +192,17 @@ public:
     /// Plan 007: the palette itself, so a test can press the keys a user would.
     [[maybe_unused]] auto getCommandPalette() const -> xoj::command::CommandPalette*;
 
+    /**
+     * Plan 007: what a fresh profile is told about the workspace it starts in, so a test can read it
+     * and put it away the way a user would.
+     */
+    [[maybe_unused]] auto getWorkspaceGuidance() const -> xoj::gui::WorkspaceGuidance*;
+
+    /// Plan 007, step 5: the shortcut reference. The action of the same name opens it.
+    void showShortcutReference();
+    /// Plan 007: the reference itself, so a test can read what it shows.
+    [[maybe_unused]] auto getShortcutReference() const -> xoj::gui::ShortcutReference*;
+
     /// Infer the window's DPI from available monitor info and use it to set the default zoom value.
     void setDPI() const;
 
@@ -197,6 +213,11 @@ private:
     void buildSurfaceStack();
     /// Plan 007: the palette, over the window it belongs to.
     void buildCommandPalette();
+    /// Plan 007: the one-time explanation of the workspace, and when it is shown.
+    void buildWorkspaceGuidance();
+    void showWorkspaceGuidanceIfFresh();
+    /// Plan 007, step 5: the shortcut reference, over the window it describes.
+    void buildShortcutReference();
     /// Plan 006: the dashboard's model, preview service and page, wired to the application.
     void buildDashboard();
     /// Read what the user has into the model and rebuild the page.
@@ -273,6 +294,12 @@ private:
 
     /// Plan 007: the command palette, created once and shown and hidden from then on.
     std::unique_ptr<xoj::command::CommandPalette> commandPalette;
+
+    /// Plan 007: the one-time explanation of the workspace, created once with the palette.
+    std::unique_ptr<xoj::gui::WorkspaceGuidance> workspaceGuidance;
+
+    /// Plan 007, step 5: the shortcut reference, created once with the palette.
+    std::unique_ptr<xoj::gui::ShortcutReference> shortcutReference;
 
     /// Plan 004: the document-safety row, directly under the top toolbars.
     std::unique_ptr<SafetyStatusBar> safetyStatusBar;

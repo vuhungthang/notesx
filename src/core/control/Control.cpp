@@ -689,6 +689,11 @@ void Control::showCommandPalette() {
     this->win->showCommandPalette();
 }
 
+void Control::showShortcutReference() {
+    xoj_assert(this->win != nullptr);
+    this->win->showShortcutReference();
+}
+
 void Control::setToolDrawingType(DrawingType type) {
     if (this->toolHandler->getDrawingType() != type) {
 

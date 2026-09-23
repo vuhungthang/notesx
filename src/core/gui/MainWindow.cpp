@@ -27,6 +27,8 @@
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
 #include "gui/SafetyStatusBar.h"                        // for SafetyStatusBar (Plan 004)
 #include "gui/SearchBar.h"                              // for SearchBar
+#include "gui/ShortcutReference.h"                      // for ShortcutReference (Plan 007)
+#include "gui/WorkspaceGuidance.h"                      // for WorkspaceGuidance (Plan 007)
 #include "gui/dashboard/DashboardPage.h"                // for DashboardPage
 #include "gui/dashboard/SurfaceStack.h"                 // for SurfaceStack
 #include "gui/dialog/XojOpenDlg.h"                      // for the file and folder choosers
@@ -201,6 +203,8 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
     // Plan 007: the palette, over the window it belongs to. Built here, once the editor and the
     // toolbars it reads the commands from are there.
     buildCommandPalette();
+    buildWorkspaceGuidance();
+    buildShortcutReference();
 }
 
 auto MainWindow::buildCommandRegistry() const -> xoj::command::CommandRegistry {
@@ -255,6 +259,51 @@ void MainWindow::showCommandPalette() {
 }
 
 auto MainWindow::getCommandPalette() const -> xoj::command::CommandPalette* { return this->commandPalette.get(); }
+
+void MainWindow::buildWorkspaceGuidance() {
+    using xoj::gui::WorkspaceGuidance;
+
+    this->workspaceGuidance =
+            std::make_unique<WorkspaceGuidance>(GTK_WINDOW(this->getWindow()), this->control->getSettings());
+
+    /*
+     * A popover needs a widget that is on screen to be anchored to, so the explanation is offered
+     * when the window is up - and it is offered on the editor surface, because that is the workspace
+     * it explains, and a dashboard the user is reading files from is not the place for it.
+     */
+    g_signal_connect_swapped(this->getWindow(), "map",
+                             G_CALLBACK(+[](MainWindow* self) { self->showWorkspaceGuidanceIfFresh(); }), this);
+}
+
+void MainWindow::showWorkspaceGuidanceIfFresh() {
+    if (this->workspaceGuidance == nullptr || !gtk_widget_get_mapped(this->getWindow())) {
+        return;
+    }
+    if (this->surfaces != nullptr && this->surfaces->isHomeShown()) {
+        return;
+    }
+    this->workspaceGuidance->showIfFresh();
+}
+
+auto MainWindow::getWorkspaceGuidance() const -> xoj::gui::WorkspaceGuidance* { return this->workspaceGuidance.get(); }
+
+void MainWindow::buildShortcutReference() {
+    using xoj::gui::ShortcutReference;
+
+    // The registry is read when the reference is opened, so what it lists is what the application
+    // offers at that moment - a command that has become unavailable is not still listed as available.
+    this->shortcutReference = std::make_unique<ShortcutReference>(GTK_WINDOW(this->getWindow()),
+                                                                  [this] { return this->buildCommandRegistry(); });
+}
+
+void MainWindow::showShortcutReference() {
+    if (this->shortcutReference == nullptr) {
+        return;
+    }
+    this->shortcutReference->toggle();
+}
+
+auto MainWindow::getShortcutReference() const -> xoj::gui::ShortcutReference* { return this->shortcutReference.get(); }
 
 GMenuModel* MainWindow::getMenuModel() const { return menubar->getModel(); }
 
@@ -754,7 +803,17 @@ void MainWindow::buildSurfaceStack() {
     // The index is made current before the surface is shown, and the dashboard is told which
     // surface is on screen so it only asks for previews while it is the one being looked at.
     callbacks.prepareHome = [this]() { this->loadDashboardSources(); };
-    callbacks.shown = [this](bool home) { this->dashboardPage->setActive(home); };
+    callbacks.shown = [this](bool home) {
+        this->dashboardPage->setActive(home);
+        /*
+         * Plan 007: a workspace the user has just entered for the first time is where the explanation
+         * of it belongs, so it is offered when the editor surface comes up rather than over the
+         * dashboard the user is reading files from.
+         */
+        if (!home) {
+            this->showWorkspaceGuidanceIfFresh();
+        }
+    };
 
     this->surfaces = std::make_unique<xoj::dashboard::SurfaceStack>(
             GTK_WINDOW(getWindow()), winXournal, this->dashboardPage->getWidget(), std::move(callbacks));

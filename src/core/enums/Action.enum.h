@@ -179,6 +179,8 @@ enum class Action : size_t {
 
     // Plan 007: finding a command instead of navigating to it
     COMMAND_PALETTE,
+    /// Plan 007, step 5: what the application can do, and the keys it is on.
+    SHORTCUT_REFERENCE,
 
     // Keep this last value
     ENUMERATOR_COUNT
