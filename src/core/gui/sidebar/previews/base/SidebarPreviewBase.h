@@ -79,6 +79,15 @@ protected:
      */
     static bool scrollToPreview(SidebarPreviewBase* sidebar);
 
+    /**
+     * The idle entry point of `scrollToPreview()`: the source is being dispatched, so the id kept
+     * for it is no longer pending.
+     */
+    static bool scrollToPreviewFromIdle(SidebarPreviewBase* sidebar) {
+        sidebar->previewScrollId = 0;
+        return scrollToPreview(sidebar);
+    }
+
     /// The width of the sidebar has changed
     void newWidth(double width);
 
@@ -118,6 +127,14 @@ private:
      * The Zoom of the previews
      */
     double zoom = 0.15;
+
+    /**
+     * The idle source queued for the scroll to the selected preview, or 0 when none is pending.
+     *
+     * The source holds this sidebar as its data, so it has to be taken out of the main context
+     * before the sidebar goes: otherwise the main loop calls into freed memory.
+     */
+    guint previewScrollId = 0;
 
     /// last recorded width of the sidebar
     double lastWidth = -1;

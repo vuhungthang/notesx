@@ -163,9 +163,10 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     gtk_drag_dest_add_image_targets(this->window);
     gtk_drag_dest_add_text_targets(this->window);
 
-    g_signal_connect(gtk_widget_get_settings(this->window), "notify::gtk-theme-name", G_CALLBACK(themeCallback), this);
-    g_signal_connect(gtk_widget_get_settings(this->window), "notify::gtk-application-prefer-dark-theme",
-                     G_CALLBACK(themeCallback), this);
+    auto* settings = gtk_widget_get_settings(this->window);
+    this->themeNameHandlerId = g_signal_connect(settings, "notify::gtk-theme-name", G_CALLBACK(themeCallback), this);
+    this->darkThemeHandlerId =
+            g_signal_connect(settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(themeCallback), this);
 
     updateColorscheme();
 }
@@ -189,7 +190,18 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
 
 GMenuModel* MainWindow::getMenuModel() const { return menubar->getModel(); }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    // The settings outlive the window and this window is their handler data: a subscription left
+    // behind has them call into a window that is gone (the next window's colorscheme update is
+    // enough to trigger it). GtkSettings are per screen and never released, so the handlers have
+    // to be taken off here.
+    auto* settings = gtk_widget_get_settings(this->window);
+    for (gulong id: {this->themeNameHandlerId, this->darkThemeHandlerId}) {
+        if (id != 0 && g_signal_handler_is_connected(settings, id)) {
+            g_signal_handler_disconnect(settings, id);
+        }
+    }
+}
 
 struct ThemeProperties {
     bool dark;

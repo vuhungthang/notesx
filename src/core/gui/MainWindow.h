@@ -181,6 +181,12 @@ private:
 private:
     Control* control;
 
+    /// The two GtkSettings subscriptions `updateColorscheme()` needs. The settings outlive this
+    /// window and hold it as their handler data, so the handlers have to come off them before the
+    /// window goes: see the destructor.
+    gulong themeNameHandlerId = 0;
+    gulong darkThemeHandlerId = 0;
+
     std::unique_ptr<XournalView> xournal;
     GtkWidget* winXournal = nullptr;
     std::unique_ptr<ScrollHandling> scrollHandling;

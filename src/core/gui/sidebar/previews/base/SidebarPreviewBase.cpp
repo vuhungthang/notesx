@@ -58,7 +58,16 @@ SidebarPreviewBase::SidebarPreviewBase(Control* control, const char* menuId, con
     gtk_widget_show_all(mainBox.get());
 }
 
-SidebarPreviewBase::~SidebarPreviewBase() { this->control->removeChangedDocumentListener(this); }
+SidebarPreviewBase::~SidebarPreviewBase() {
+    // The scroll below is queued as a one-shot idle source holding this sidebar, and nothing else
+    // takes it out of the main context: left pending, the main loop calls it once this object is
+    // gone.
+    if (this->previewScrollId != 0) {
+        g_source_remove(this->previewScrollId);
+    }
+
+    this->control->removeChangedDocumentListener(this);
+}
 
 void SidebarPreviewBase::enableSidebar() {
     if (!this->enabled) {
@@ -164,7 +173,11 @@ auto SidebarPreviewBase::scrollToPreview(SidebarPreviewBase* sidebar) -> bool {
         int y = allocation.y;
 
         if (x == -1) {
-            g_idle_add(xoj::util::wrap_for_once_v<scrollToPreview>, sidebar);
+            // Only one source at a time: it re-queues itself until the preview is laid out, and a
+            // second one would leave an id nobody can take out of the main context again.
+            if (sidebar->previewScrollId == 0) {
+                sidebar->previewScrollId = g_idle_add(xoj::util::wrap_for_once_v<scrollToPreviewFromIdle>, sidebar);
+            }
             return false;
         }
 
