@@ -67,6 +67,23 @@ SurfaceStack::SurfaceStack(GtkWindow* window, GtkWidget* editor, GtkWidget* home
         const char* accels[] = {"<Control>Home", nullptr};
         gtk_application_set_accels_for_action(application, SHOW_HOME_FULL_ACTION, accels);
     }
+
+    /*
+     * The surfaces are built into a window that is already on screen, and nothing shows them again: they
+     * are packed into an already-visible `boxContents` (Glade shows that box with the rest of the
+     * window), the application presents the window with gtk_window_present rather than with
+     * gtk_widget_show_all, and the only show that follows is `gtk_widget_show_all(winXournal)`, which
+     * shows the editor *inside* this stack and not the stack itself. Packing a child into a visible
+     * parent does not show the child - gtk_box_append is only gtk_box_pack_start (see
+     * util/gtk4_helper.cpp) - so a stack that does not show itself and its bar here would never be
+     * mapped, and the window would show its background where the editor's page belongs.
+     *
+     * show_all on the stack shows only the page that is the stack's visible child, so the dashboard
+     * stays off screen until it is asked for; the bar is the editor's own way to the dashboard and
+     * comes up with it, exactly as setShown() keeps it afterwards.
+     */
+    gtk_widget_show_all(this->stack.get());
+    gtk_widget_show_all(this->bar.get());
 }
 
 SurfaceStack::~SurfaceStack() {

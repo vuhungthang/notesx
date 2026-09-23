@@ -23,6 +23,7 @@
 #include "dashboard/ThumbnailService.h"   // for ThumbnailService
 #include "gui/dashboard/DashboardPage.h"  // for DashboardPage
 #include "gui/dashboard/SurfaceStack.h"   // for SurfaceStack
+#include "util/gtk4_helper.h"             // for gtk_box_append, as the window uses it
 
 #include "config-test.h"
 #include "filesystem.h"
@@ -70,6 +71,18 @@ void settle() {
 struct DestroyCounter {
     int count = 0;
 };
+
+/// Iterates the main loop until `done` holds, or gives up after about a second of real time. A window
+/// that has just been shown is only mapped once the display has answered, so a case that has to speak
+/// about mapping waits for it rather than assuming it happened.
+template <typename F>
+void settleUntil(F done) {
+    for (int i = 0; i < 500 && !done(); i++) {
+        settle();
+        g_usleep(2000);
+    }
+    settle();
+}
 
 }  // namespace
 
@@ -292,3 +305,80 @@ class SurfaceStackHomePreviewGtkTest: public GtkTest {
     }
 };
 TEST_F(SurfaceStackHomePreviewGtkTest, theFirstVisitToHomeAsksForItsPreviewsAndLeavingStopsThem) {}
+
+/*
+ * The regression this case guards: a real application launched with no document shows the window, its
+ * toolbars and its sidebar, and the page area where the white paper belongs is empty theme background.
+ *
+ * MainWindow builds the surfaces from initXournalWidget, which is run after the Glade window and its
+ * contents are on screen. It appends the bar and the stack to the already-shown `boxContents` and then
+ * shows the editor with `gtk_widget_show_all(winXournal)`, and the application presents the window
+ * with `gtk_window_present` rather than with `gtk_widget_show_all(window)`. Packing a child into a
+ * parent that is already visible does not show the child - `gtk_box_append` is only
+ * `gtk_box_pack_start` (see src/util/gtk4_helper.cpp) - and the editor is shown inside the stack, so
+ * nothing in that sequence ever makes the stack itself visible. The stack has to put what it creates
+ * on screen itself.
+ *
+ * This case is that sequence, in that order: the window and its contents are shown first, the surfaces
+ * are built and packed after, and the only show that follows is the one on the editor. The window is
+ * asserted to be mapped before anything else, so a failure here is about the surfaces and not about
+ * the display the case runs on.
+ */
+class SurfaceStackOnAShownWindowGtkTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        GtkWidget* window = gtk_application_window_new(app);
+        gtk_window_set_default_size(GTK_WINDOW(window), 1024, 600);
+
+        // The window's contents, standing in for main.glade's `boxContents`: part of the window that
+        // is already on screen before the editor exists.
+        GtkWidget* contents = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_container_add(GTK_CONTAINER(window), contents);
+        gtk_widget_show_all(window);
+        settleUntil([window]() { return gtk_widget_get_mapped(window) != FALSE; });
+
+        GtkWidget* editor = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_widget_set_name(editor, "editorSurface");
+        GtkWidget* home = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_widget_set_name(home, "homeSurface");
+
+        // Built and packed into contents that are already visible, exactly as buildSurfaceStack does.
+        SurfaceStack surfaces{GTK_WINDOW(window), editor, home, {}};
+        gtk_box_append(GTK_BOX(contents), surfaces.getBar());
+        gtk_box_append(GTK_BOX(contents), surfaces.getWidget());
+
+        // What the application shows last: the editor, and nothing else.
+        gtk_widget_show_all(editor);
+        settleUntil([editor]() { return gtk_widget_get_mapped(editor) != FALSE; });
+
+        ASSERT_TRUE(gtk_widget_get_mapped(window))
+                << "the window is on screen, so what follows is about the surfaces and not the display";
+
+        EXPECT_TRUE(gtk_widget_get_visible(surfaces.getWidget()))
+                << "the stack is built into contents that were already shown and is never shown again";
+        EXPECT_TRUE(gtk_widget_get_visible(surfaces.getBar()))
+                << "the way to the dashboard is on screen with the editor";
+        EXPECT_TRUE(gtk_widget_get_visible(editor)) << "the editor is the surface that is shown";
+        EXPECT_TRUE(gtk_widget_get_child_visible(editor));
+        EXPECT_TRUE(gtk_widget_get_mapped(editor)) << "the editor's page is on screen, not merely flagged visible";
+        EXPECT_GT(gtk_widget_get_allocated_width(surfaces.getWidget()), 0);
+        EXPECT_GT(gtk_widget_get_allocated_height(surfaces.getWidget()), 0)
+                << "the stack was given the space the page area is";
+        EXPECT_GT(gtk_widget_get_allocated_height(editor), 0) << "the page area has the height to render a page";
+
+        // And the dashboard stays out of it until it is asked for.
+        EXPECT_FALSE(gtk_widget_get_child_visible(home));
+        EXPECT_FALSE(surfaces.isHomeShown());
+        EXPECT_STREQ(gtk_stack_get_visible_child_name(GTK_STACK(surfaces.getWidget())), SurfaceStack::EDITOR);
+
+        // Asking for it is what puts it on screen: the same fixing of visibility does not show a page
+        // the user did not ask for.
+        surfaces.showHome();
+        settle();
+        EXPECT_TRUE(gtk_widget_get_child_visible(home));
+        EXPECT_FALSE(gtk_widget_get_child_visible(editor));
+
+        gtk_widget_destroy(window);
+        settle();
+    }
+};
+TEST_F(SurfaceStackOnAShownWindowGtkTest, theEditorPageIsOnScreenWhenTheWindowWasShownFirst) {}
