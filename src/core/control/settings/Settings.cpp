@@ -399,6 +399,48 @@ void Settings::parseToolPresets(xmlNodePtr cur) {
     this->toolPresets = ToolPresetList::fromStored(stored);
 }
 
+/**
+ * Plan 008: the gesture preferences.
+ *
+ * The element carries a version, and the whole element is handed to GestureSettings::migrated(),
+ * which is the one place that decides what a file written by another version means. A profile
+ * that has never seen this plan carries no element at all, and is read as the conservative
+ * defaults - which is what leaving every dangerous gesture off means.
+ */
+void Settings::parseGestureSettings(xmlNodePtr cur) {
+    xmlChar* version = xmlGetProp(cur, reinterpret_cast<const xmlChar*>("version"));
+    const int storedVersion = version == nullptr ? 0 : atoi(reinterpret_cast<const char*>(version));
+    xmlFree(version);
+
+    std::map<std::string, std::string> attributes;
+    for (xmlAttrPtr attribute = cur->properties; attribute != nullptr; attribute = attribute->next) {
+        if (!xmlStrcmp(attribute->name, reinterpret_cast<const xmlChar*>("version"))) {
+            continue;
+        }
+        xmlChar* value = xmlNodeListGetString(cur->doc, attribute->children, 1);
+        if (value == nullptr) {
+            continue;
+        }
+        attributes.emplace(reinterpret_cast<const char*>(attribute->name), reinterpret_cast<const char*>(value));
+        xmlFree(value);
+    }
+
+    this->gestureSettings = xoj::gesture::GestureSettings::migrated(storedVersion, attributes);
+}
+
+void Settings::saveGestureSettings(xmlNodePtr root) {
+    xmlNodePtr element = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("gestureSettings"), nullptr);
+
+    char version[16];
+    g_snprintf(version, sizeof(version), "%i", xoj::gesture::GestureSettings::STORAGE_VERSION);
+    xmlSetProp(element, reinterpret_cast<const xmlChar*>("version"), reinterpret_cast<const xmlChar*>(version));
+
+    for (const auto& [name, value]: this->gestureSettings.toAttributes()) {
+        xmlSetProp(element, reinterpret_cast<const xmlChar*>(name.c_str()),
+                   reinterpret_cast<const xmlChar*>(value.c_str()));
+    }
+}
+
 void Settings::saveToolPresets(xmlNodePtr root) {
     xmlNodePtr presets = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("toolPresets"), nullptr);
 
@@ -580,6 +622,12 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Plan 007: the palette's recent commands and what the guidance and the tips have shown.
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("interface"))) {
         parseInterface(cur);
+        return;
+    }
+
+    // Plan 008: the gesture preferences, in their own versioned element.
+    if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("gestureSettings"))) {
+        parseGestureSettings(cur);
         return;
     }
 
@@ -1291,6 +1339,9 @@ void Settings::save() {
     // Plan 006: the dashboard's pinned files and watched folders.
     saveDashboard(root);
     saveInterface(root);
+
+    // Plan 008: the gesture preferences, with the version they were written in.
+    saveGestureSettings(root);
 
     saveProperty("lastSavePath", char_cast(this->lastSavePath.u8string().c_str()), root);
     saveProperty("lastOpenPath", char_cast(this->lastOpenPath.u8string().c_str()), root);
@@ -2613,6 +2664,17 @@ void Settings::setFavoritePresetCount(int count) {
     }
 
     this->favoritePresetCount = clamped;
+    save();
+}
+
+auto Settings::getGestureSettings() const -> const xoj::gesture::GestureSettings& { return this->gestureSettings; }
+
+void Settings::setGestureSettings(xoj::gesture::GestureSettings settings) {
+    if (this->gestureSettings == settings) {
+        return;
+    }
+
+    this->gestureSettings = settings;
     save();
 }
 

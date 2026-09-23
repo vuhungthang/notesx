@@ -25,6 +25,7 @@
 #include <libxml/tree.h>  // for xmlNodePtr, xmlDocPtr
 
 #include "control/ToolPreset.h"                  // for ToolPreset, ToolPresetList
+#include "control/gestures/GestureSettings.h"    // for GestureSettings (Plan 008)
 #include "control/tools/StrokeStabilizerEnum.h"  // for AveragingMethod, Pre...
 #include "model/Font.h"                          // for XojFont
 #include "util/Color.h"                          // for Color
@@ -163,6 +164,16 @@ private:
     void parseInterface(xmlNodePtr cur);
     void saveInterface(xmlNodePtr root);
 
+    /**
+     * Plan 008: read/write the <gestureSettings> element.
+     *
+     * The element carries a version attribute and the settings as attributes; the reading is done
+     * by xoj::gesture::GestureSettings::migrated(), which decides what a version this build does
+     * not know means. Nothing dangerous is read from such a file.
+     */
+    void parseGestureSettings(xmlNodePtr cur);
+    void saveGestureSettings(xmlNodePtr root);
+
     static xmlNodePtr savePropertyDouble(const gchar* key, double value, xmlNodePtr parent);
     static xmlNodePtr saveProperty(const gchar* key, int value, xmlNodePtr parent);
     static xmlNodePtr savePropertyUnsigned(const gchar* key, unsigned int value, xmlNodePtr parent);
@@ -243,6 +254,15 @@ public:
      */
     int getFavoritePresetCount() const;
     void setFavoritePresetCount(int count);
+
+    /**
+     * Plan 008: the gesture preferences.
+     *
+     * The value is what the recognizers are asked about when a gesture ends, so setting it takes
+     * effect immediately - there is nothing cached to invalidate and no restart.
+     */
+    const xoj::gesture::GestureSettings& getGestureSettings() const;
+    void setGestureSettings(xoj::gesture::GestureSettings settings);
 
     void setEdgePanSpeed(double speed);
     double getEdgePanSpeed() const;
@@ -955,6 +975,9 @@ private:
     ToolPresetList toolPresets = ToolPresetList::seedDefaults();
     /// How many favourites Focus shows directly.
     int favoritePresetCount = static_cast<int>(ToolPresetList::MAX_FAVORITES);
+
+    /// Plan 008: the gesture preferences, conservative by default and read at gesture time.
+    xoj::gesture::GestureSettings gestureSettings = xoj::gesture::GestureSettings::defaults();
 
     /**
      * Plan 006: the dashboard's own two lists, kept as UTF-8 paths.
