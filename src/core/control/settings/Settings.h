@@ -452,8 +452,15 @@ public:
     void setDashboardFolders(const std::vector<DashboardFolder>& folders);
     /// Start listing a folder unless it is listed already. Returns whether the list changed.
     auto addDashboardFolder(const fs::path& folder, bool recursive = false) -> bool;
-    /// Stop listing a folder. Returns whether the list changed.
+    /// Stop listing a folder. Returns whether the list changed. Nothing inside it is touched.
     auto removeDashboardFolder(const fs::path& folder) -> bool;
+
+    /**
+     * Ask for a folder's subtree, or stop asking for it. Deep listing is off by default, and a
+     * folder is only ever walked when the user asks for it: what changes here is the dashboard's
+     * own setting, never the folder.
+     */
+    auto setDashboardFolderRecursive(const fs::path& folder, bool recursive) -> bool;
 
     bool isHighlightPosition() const;
     void setHighlightPosition(bool highlight);

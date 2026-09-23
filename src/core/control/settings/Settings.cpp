@@ -476,7 +476,8 @@ void Settings::saveDashboard(xmlNodePtr root) {
 
     for (const DashboardFolder& folder: this->dashboardFolders) {
         xmlNodePtr node = xmlNewChild(dashboard, nullptr, reinterpret_cast<const xmlChar*>("folder"), nullptr);
-        xmlSetProp(node, reinterpret_cast<const xmlChar*>("path"), reinterpret_cast<const xmlChar*>(folder.path.c_str()));
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("path"),
+                   reinterpret_cast<const xmlChar*>(folder.path.c_str()));
         xmlSetProp(node, reinterpret_cast<const xmlChar*>("recursive"),
                    reinterpret_cast<const xmlChar*>(folder.recursive ? "true" : "false"));
     }
@@ -626,8 +627,7 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->sidebarNumberingStyle = static_cast<SidebarNumberingStyle>(num);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("sidebarPageLayoutMode")) == 0) {
         int num = std::stoi(reinterpret_cast<char*>(value));
-        if (num < static_cast<int>(SidebarPageLayoutMode::MIN) ||
-            static_cast<int>(SidebarPageLayoutMode::MAX) < num) {
+        if (num < static_cast<int>(SidebarPageLayoutMode::MIN) || static_cast<int>(SidebarPageLayoutMode::MAX) < num) {
             num = static_cast<int>(SidebarPageLayoutMode::DEFAULT);
             g_warning("Settings::Invalid sidebarPageLayoutMode value. Reset to default.");
         }
@@ -1821,6 +1821,22 @@ auto Settings::unpinDashboardFile(const fs::path& file) -> bool {
     this->dashboardPinnedFiles.erase(first, this->dashboardPinnedFiles.end());
     save();
     return true;
+}
+
+auto Settings::setDashboardFolderRecursive(const fs::path& folder, bool recursive) -> bool {
+    const std::string path = storedPath(folder);
+    for (DashboardFolder& listed: this->dashboardFolders) {
+        if (listed.path != path) {
+            continue;
+        }
+        if (listed.recursive == recursive) {
+            return false;
+        }
+        listed.recursive = recursive;
+        save();
+        return true;
+    }
+    return false;
 }
 
 auto Settings::getDashboardFolders() const -> const std::vector<DashboardFolder>& { return this->dashboardFolders; }
