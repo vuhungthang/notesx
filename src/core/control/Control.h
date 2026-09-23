@@ -291,8 +291,11 @@ public:
      * Put the document's pages into the order `target` gives.
      *
      * The move is emitted as the same delete/insert pair the single page move sends, so every
-     * listener that keeps its own page list - the views, the navigator - stays in step. The
-     * selection follows the pages it had selected to their new indices.
+     * listener that keeps its own page list - the views, the navigator - stays in step. While
+     * those pairs are being sent the selection model is not fed them: they are not edits of the
+     * document's contents, and the pages the views scroll to on the way are incidental. The
+     * selection follows the pages it had selected to their new indices, and the editor is put back
+     * on the page it was showing.
      */
     void applyPageOrder(const std::vector<PageRef>& target);
 
@@ -609,9 +612,11 @@ private:
     /**
      * True while `applyPageOrder()` is moving pages one at a time.
      *
-     * The delete/insert pair it emits per moved page is not an edit of the document's contents,
-     * so the selection model must not read it as one: the pages stay selected and only their
-     * indices change, which `applyPageOrder()` applies as one permutation at the end.
+     * The delete/insert pair it emits per moved page is not an edit of the document's contents, so
+     * the selection model must not read it as one: the pages stay selected and only their indices
+     * change, which `applyPageOrder()` applies as one permutation at the end. The page selection
+     * events the views fire while they scroll through the move are not the navigator's either, so
+     * they are left out of the model as well.
      */
     bool applyingPageReorder = false;
 

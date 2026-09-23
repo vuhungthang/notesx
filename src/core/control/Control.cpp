@@ -604,7 +604,12 @@ void Control::firePageSelected(size_t page) {
         // Plan 005: a page change the navigator did not decide itself - a scroll, a jump, a load -
         // replaces the selection with the page it lands on. A change the navigator decided has
         // already set the model up, and must not collapse the selection the user just made.
-        if (this->pageSelection.getCurrentPage() != page) {
+        //
+        // A reorder in progress is a change the navigator decided as well: the delete/insert pair
+        // it emits per moved page makes the views scroll, and the pages they scroll to are
+        // incidental. `applyPageOrder()` puts the selection and the current page back on the
+        // identities the navigator had once the whole order is in place.
+        if (!this->applyingPageReorder && this->pageSelection.getCurrentPage() != page) {
             this->pageSelection.setCurrentPage(page);
         }
         DocumentHandler::firePageSelected(page);
@@ -940,12 +945,16 @@ void Control::pageSelectionClicked(size_t page, bool controlPressed, bool shiftP
 }
 
 void Control::deleteSelectedPages() {
-    const auto& selection = this->pageSelection.getSelection();
-    if (selection.empty()) {
+    // A copy, not a reference: every deletion below fires a page event, and the listeners - the
+    // selection model among them - react to it by editing their own page list. Reading the model's
+    // vector again after that would read it emptied, and would invalidate the iterators of the
+    // loop that is doing the deleting.
+    const std::vector<size_t> selected = this->pageSelection.getSelection();
+    if (selected.empty()) {
         return;
     }
     // don't allow deleting every page: there has to be at least one left.
-    if (this->doc->getPageCount() <= selection.size()) {
+    if (this->doc->getPageCount() <= selected.size()) {
         return;
     }
 
@@ -954,9 +963,26 @@ void Control::deleteSelectedPages() {
         this->doc->lock_shared();
         const auto page = this->doc->indexOf(geometryToolController->getPage());
         this->doc->unlock_shared();
-        if (page != npos && std::find(selection.begin(), selection.end(), page) != selection.end()) {
+        if (page != npos && std::find(selected.begin(), selected.end(), page) != selected.end()) {
             resetGeometryTool();
         }
+    }
+
+    // Where the editor lands, as the page itself rather than as an index: the one that takes the
+    // place of the first selected page once the selection is gone. Read before anything is
+    // deleted, because every deletion after the first one shifts the indices that follow it.
+    PageRef landingPage;
+    {
+        this->doc->lock_shared();
+        std::vector<PageRef> remaining;
+        remaining.reserve(this->doc->getPageCount() - selected.size());
+        for (size_t i = 0; i < this->doc->getPageCount(); ++i) {
+            if (!std::binary_search(selected.begin(), selected.end(), i)) {
+                remaining.push_back(this->doc->getPage(i));
+            }
+        }
+        this->doc->unlock_shared();
+        landingPage = remaining[std::min(selected.front(), remaining.size() - 1)];
     }
 
     auto group = std::make_unique<GroupUndoAction>();
@@ -964,7 +990,7 @@ void Control::deleteSelectedPages() {
     // Descending: deleting a page does not move the indices of the pages before it, so the pages
     // still to be deleted keep the indices the user saw.
     std::vector<std::unique_ptr<UndoAction>> deletions;
-    for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
+    for (auto it = selected.rbegin(); it != selected.rend(); ++it) {
         const size_t pNr = *it;
         if (pNr >= this->doc->getPageCount()) {
             continue;
@@ -995,7 +1021,14 @@ void Control::deleteSelectedPages() {
 
     this->undoRedo->addUndoAction(std::move(group));
 
-    const size_t landing = std::min(selection.front(), this->doc->getPageCount() - 1);
+    this->doc->lock_shared();
+    const size_t landingIndex = this->doc->indexOf(landingPage);
+    this->doc->unlock_shared();
+    // The page that was picked above is still there - only selected pages were deleted - so the
+    // fallback is only for a document that changed underneath the deletion.
+    const size_t landing =
+            landingIndex != npos ? landingIndex : std::min(selected.front(), this->doc->getPageCount() - 1);
+
     this->pageSelection.replaceWith(landing);
     this->scrollHandler->scrollToPage(landing);
     this->win->getXournal()->forceUpdatePagenumbers();
@@ -1003,16 +1036,24 @@ void Control::deleteSelectedPages() {
 }
 
 void Control::duplicateSelectedPages() {
-    const auto& selection = this->pageSelection.getSelection();
-    if (selection.empty()) {
+    // A copy, not a reference: the insertions below fire page events, and the selection model is
+    // one of the listeners that edits its own selection when it hears one.
+    const std::vector<size_t> selected = this->pageSelection.getSelection();
+    if (selected.empty()) {
         return;
     }
 
+    // The page the editor shows, before the copies are made: the insertions shift the indices of
+    // everything below them, and the editor has to stay on the page the user is looking at.
+    const PageRef currentPage = this->getCurrentPage();
+
     auto group = std::make_unique<GroupUndoAction>();
-    const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(selection);
+    // Where the copies end up, which is not one page at a time: each insertion moves the copies
+    // made after it (see xoj::model::duplicatedPageIndices()).
+    const std::vector<size_t> copies = xoj::model::duplicatedPageIndices(selected);
 
     // Descending, so that inserting a copy does not move the index of a page still to duplicate.
-    for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
+    for (auto it = selected.rbegin(); it != selected.rend(); ++it) {
         const size_t pNr = *it;
         this->doc->lock_shared();
         PageRef page = this->doc->getPage(pNr);
@@ -1035,6 +1076,18 @@ void Control::duplicateSelectedPages() {
 
     // The copies are what the user just made, so they are what stays selected.
     this->pageSelection.setSelection(copies);
+
+    // ... and the editor stays on the page it was on, whatever page the events of the insertions
+    // moved it to.
+    if (currentPage) {
+        this->doc->lock_shared();
+        const size_t currentIndex = this->doc->indexOf(currentPage);
+        this->doc->unlock_shared();
+        if (currentIndex != npos) {
+            this->pageSelection.setCurrentPageWithoutSelecting(currentIndex);
+            this->scrollHandler->scrollToPage(currentIndex);
+        }
+    }
 
     getCursor()->updateCursor();
     updatePageActions();
@@ -1112,6 +1165,12 @@ void Control::applyPageOrder(const std::vector<PageRef>& target) {
     }
     doc->unlock_shared();
 
+    // The page the editor shows, by identity rather than by index: the delete/insert pairs below
+    // make the views scroll and select pages of their own, and the move gives this page a new
+    // index, so only the page itself is a stable way back to it.
+    const size_t currentBefore = this->pageSelection.getCurrentPage();
+    const PageRef currentPage = currentBefore < current.size() ? current[currentBefore] : PageRef();
+
     std::vector<size_t> newToOld(target.size());
     for (size_t i = 0; i < target.size(); ++i) {
         newToOld[i] = i;
@@ -1149,9 +1208,21 @@ void Control::applyPageOrder(const std::vector<PageRef>& target) {
 
     this->pageSelection.applyPermutation(newToOld);
 
-    const size_t currentPage = this->pageSelection.getCurrentPage();
-    if (currentPage != npos) {
-        this->scrollHandler->scrollToPage(currentPage);
+    // The model and the editor are put back on the same logical page, whatever page the events of
+    // the move left the editor on.
+    size_t currentAfter = npos;
+    if (currentPage) {
+        doc->lock_shared();
+        currentAfter = doc->indexOf(currentPage);
+        doc->unlock_shared();
+    }
+    if (currentAfter == npos && doc->getPageCount() != 0) {
+        // Nothing to go back to: land on the page that took the old one's place.
+        currentAfter = std::min(currentBefore, doc->getPageCount() - 1);
+    }
+    if (currentAfter != npos) {
+        this->pageSelection.setCurrentPageWithoutSelecting(currentAfter);
+        this->scrollHandler->scrollToPage(currentAfter);
     }
     this->win->getXournal()->forceUpdatePagenumbers();
 
