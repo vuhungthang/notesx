@@ -30,11 +30,14 @@
 #include "gui/MainWindow.h"                            // for MainWindow
 #include "gui/TipService.h"                            // for TipService
 #include "gui/XournalView.h"                           // for XournalView, an anchor inside the window
+#include "gui/toolbarMenubar/AbstractToolItem.h"       // for AbstractToolItem
+#include "gui/toolbarMenubar/PresetFavoritesItem.h"    // for PresetFavoritesItem
 #include "gui/toolbarMenubar/ToolPropertyPopover.h"    // for ToolPropertyPopoverFactory
 #include "gui/toolbarMenubar/ToolPropertyProvider.h"   // for ToolPropertyProvider, ToolPropertyRegistry
 #include "gui/toolbarMenubar/ToolPropertyProviders.h"  // for addBuiltInToolPropertyProviders
 #include "model/PageRef.h"                             // for PageRef
 #include "model/XojPage.h"                             // for XojPage
+#include "util/gtk4_helper.h"                          // for gtk_box_append
 #include "util/raii/GObjectSPtr.h"                     // for WidgetSPtr
 
 #include "config-test.h"
@@ -86,6 +89,20 @@ auto shownSentence(const TipService* tips) -> std::string {
     }
     g_list_free(children);
     return text;
+}
+
+/// The first favourite button of a strip, or nullptr when the strip has none.
+auto favouriteButton(GtkWidget* strip) -> GtkWidget* {
+    GList* children = gtk_container_get_children(GTK_CONTAINER(strip));
+    GtkWidget* button = nullptr;
+    for (GList* child = children; child != nullptr; child = child->next) {
+        if (GTK_IS_BUTTON(child->data)) {
+            button = GTK_WIDGET(child->data);
+            break;
+        }
+    }
+    g_list_free(children);
+    return button;
 }
 
 /// ToolHandler reports changes to a listener; these tests do not look at the reports.
@@ -157,6 +174,42 @@ public:
         }
     }
 
+    /**
+     * The favourite strip of the Focus toolbar - the profile set up to have one - in the window, so
+     * that a click on it is a click in this window and not in a window of its own.
+     */
+    auto showFavouritePresets() -> GtkWidget* {
+        ToolPresetList presets;
+        const std::string penId =
+                presets.add(ToolPreset{.name = "Fine pen", .toolType = TOOL_PEN, .size = TOOL_SIZE_FINE});
+        if (!presets.setFavorite(penId, true)) {
+            ADD_FAILURE() << "the preset can be a favourite";
+            return nullptr;
+        }
+        this->settings()->setToolPresets(std::move(presets));
+        this->settings()->setFavoritePresetCount(1);
+
+        this->icons = std::make_unique<IconNameHelper>(this->settings());
+        this->favorites = std::make_unique<PresetFavoritesItem>("PRESET_FAVORITES", *this->adapter, *this->settings(),
+                                                                *this->icons);
+
+        // The item is built the way the toolbar builds it, and put in a toolbar the way the toolbar
+        // holds it: a GtkToolItem belongs in one, and the strip is its child.
+        this->favoritesItem = static_cast<AbstractToolItem&>(*this->favorites).createItem(true);
+        GtkWidget* toolbar = gtk_toolbar_new();
+        /*
+         * A toolbar that is allocated less room than its items need hides them - GTK's own rule, and
+         * one that would take the strip off screen in the middle of a test. The window's own toolbar
+         * area has the room, so this one is given it.
+         */
+        gtk_widget_set_size_request(toolbar, -1, 40);
+        gtk_toolbar_insert(GTK_TOOLBAR(toolbar), GTK_TOOL_ITEM(this->favoritesItem.get()), -1);
+        gtk_box_append(GTK_BOX(this->win->get("boxContents")), toolbar);
+        gtk_widget_show_all(toolbar);
+        settle();
+        return gtk_bin_get_child(GTK_BIN(this->favoritesItem.get()));
+    }
+
     /// Press a key where the keyboard is, the way the window delivers it.
     static void pressKeyWhereTheKeyboardIs(GtkWidget* window, guint keyval) {
         GtkWidget* toplevel = gtk_widget_get_toplevel(window);
@@ -220,6 +273,9 @@ private:
 
         this->toolPopover.reset();
         this->factory.reset();
+        this->favoritesItem.reset();
+        this->favorites.reset();
+        this->icons.reset();
         this->handler.reset();
         this->win.reset();
         this->control.reset();
@@ -237,6 +293,11 @@ public:
     std::unique_ptr<ToolConfigAdapter> adapter;
     std::unique_ptr<ToolPropertyPopoverFactory> factory;
     xoj::util::WidgetSPtr toolPopover;
+
+    /// Plan 007, step 4: the favourite strip a scenario reaches for.
+    std::unique_ptr<IconNameHelper> icons;
+    std::unique_ptr<PresetFavoritesItem> favorites;
+    xoj::util::WidgetSPtr favoritesItem;
 };
 
 namespace {
@@ -346,6 +407,53 @@ void theKeyboardPutsTheTipAway(TipServiceFixture& test) {
     EXPECT_TRUE(test.settings()->hasSeenTip(TipService::idOf(TipService::Tip::ToolProperties)));
 }
 
+/// Reaching for a favourite preset is the moment the tip about the strip is about, and it happens once.
+void pickingAFavouritePresetOffersItsTipOnce(TipServiceFixture& test) {
+    TipService* tips = test.tips();
+    ASSERT_FALSE(tips->isShown()) << "nothing is offered before anything happens";
+
+    GtkWidget* strip = test.showFavouritePresets();
+    ASSERT_NE(strip, nullptr);
+    ASSERT_EQ(gtk_widget_get_toplevel(strip), test.win->getWindow())
+            << "the strip is in the window whose tips are looked up from it";
+    EXPECT_FALSE(tips->isShown()) << "having favourites is not the moment; reaching for one is";
+
+    GtkWidget* button = favouriteButton(strip);
+    ASSERT_NE(button, nullptr) << "the strip has a favourite to reach for";
+    gtk_button_clicked(GTK_BUTTON(button));
+    settle();
+    EXPECT_EQ(test.adapter->getState().toolType, TOOL_PEN) << "the click applied the favourite preset";
+
+    ASSERT_TRUE(tips->isShown()) << "picking a favourite is what the tip is about";
+    EXPECT_EQ(*tips->shownTip(), TipService::Tip::FavoritePresets);
+    // Anchored to the strip, which is what the tip is about: applying the preset rebuilds the strip's
+    // buttons, so a tip pointing at the button that was clicked would point at a widget that is gone.
+    EXPECT_EQ(gtk_popover_get_relative_to(GTK_POPOVER(tips->getPopover())), strip);
+
+    tips->dismiss();
+    settle();
+    EXPECT_TRUE(test.settings()->hasSeenTip(TipService::idOf(TipService::Tip::FavoritePresets)));
+
+    // Told once: the next favourite the user picks says nothing.
+    GtkWidget* afterRebuild = favouriteButton(strip);
+    ASSERT_NE(afterRebuild, nullptr) << "the strip still has its favourite after applying it";
+    gtk_button_clicked(GTK_BUTTON(afterRebuild));
+    settle();
+    EXPECT_FALSE(tips->isShown()) << "a user who has been told this tip is not told it again";
+}
+
+/// The tips switch covers this one too: with the tips off, reaching for a favourite says nothing.
+void favouritesSayNothingWhenTheTipsAreOff(TipServiceFixture& test) {
+    GtkWidget* strip = test.showFavouritePresets();
+    ASSERT_NE(strip, nullptr);
+
+    GtkWidget* button = favouriteButton(strip);
+    ASSERT_NE(button, nullptr);
+    gtk_button_clicked(GTK_BUTTON(button));
+    settle();
+    EXPECT_FALSE(test.tips()->isShown()) << "the global switch means nothing is offered at all";
+}
+
 const TipScenario TIP_SCENARIOS[] = {
         {"theTriggerOffersTheTipOnce", freshProfile, theTriggerOffersTheTipOnce},
         {"aTipOnceDismissedDoesNotComeBack",
@@ -369,6 +477,13 @@ const TipScenario TIP_SCENARIOS[] = {
          resettingBringsTheTipsBack},
         {"theNewestTipIsTheOnlyOneUp", freshProfile, theNewestTipIsTheOnlyOneUp},
         {"theKeyboardPutsTheTipAway", freshProfile, theKeyboardPutsTheTipAway},
+        {"pickingAFavouritePresetOffersItsTipOnce", freshProfile, pickingAFavouritePresetOffersItsTipOnce},
+        {"favouritesSayNothingWhenTheTipsAreOff",
+         [](Settings& settings) {
+             freshProfile(settings);
+             settings.setInterfaceTipsEnabled(false);
+         },
+         favouritesSayNothingWhenTheTipsAreOff},
 };
 
 }  // namespace

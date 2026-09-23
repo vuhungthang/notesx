@@ -32,9 +32,13 @@ namespace xoj::gui {
  * A tip is identified by a stable id, which is what the profile remembers; the sentence itself can
  * be reworded without turning it into a different tip.
  *
- * The tips that exist are the ones the application can currently offer. A gesture tip (Plan 008) is
- * a new id in `idOf()` and a trigger where the gesture is recognised - the service needs nothing
- * new to show one, which is the extension point Plan 008 needs.
+ * The tips that exist are the ones the application can currently offer, and every one of them is
+ * offered by the code that already knows its moment - a tool's properties being opened, a favourite
+ * preset being picked. That code says so with offerAt(), which is the whole extension path: a tip
+ * the application learns to offer later is an id in `idOf()` and an offer where its moment is
+ * recognised, and the service needs nothing new. The gesture hint Plan 008 is about is that third
+ * thing and no more; the page multi-select below has its id and no trigger yet, because the
+ * multi-select itself does not exist in this tree (see the note on `PageMultiSelect`).
  */
 class TipService {
 public:
@@ -43,7 +47,15 @@ public:
         ToolProperties,
         /// The first time the user reaches for the favorite presets.
         FavoritePresets,
-        /// The first time the user selects more than one page.
+        /**
+         * The first time the user selects more than one page.
+         *
+         * Nothing offers this one yet, on purpose: there is no page multi-select in this tree, and a
+         * tip offered from a trigger that does not exist would be a sentence about a feature nobody
+         * can reach. The id is here because ids are what profiles store, so whoever adds the
+         * multi-select - a selection over several pages in the page list - offers this tip from the
+         * code that recognises the second page being added, with offerAt() and no change here.
+         */
         PageMultiSelect,
     };
 
@@ -60,6 +72,16 @@ public:
      * it is looked up when it is offered.
      */
     static auto of(GtkWindow* window) -> TipService*;
+
+    /**
+     * Offer a tip about @p widget, in the window that widget is in.
+     *
+     * How a widget that knows its own moment offers a tip: it does not know the window's owner, and
+     * it should not have to. The window is looked up from the widget, the tip is anchored to the
+     * widget, and a widget in a window whose service has nothing to say - or in no window at all -
+     * does nothing.
+     */
+    static void offerAt(GtkWidget* widget, Tip tip);
 
     TipService(GtkWindow* window, Settings* settings);
     ~TipService();

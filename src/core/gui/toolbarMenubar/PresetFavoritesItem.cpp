@@ -5,6 +5,7 @@
 
 #include "control/settings/Settings.h"  // for Settings
 #include "gui/IconNameHelper.h"         // for IconNameHelper
+#include "gui/TipService.h"             // for TipService (Plan 007)
 #include "util/gtk4_helper.h"           // for gtk_box_append, gtk_widget_add_css_class
 #include "util/i18n.h"                  // for _
 
@@ -46,11 +47,21 @@ auto PresetFavoritesItem::createItem(bool horizontal) -> xoj::util::WidgetSPtr {
 
 void PresetFavoritesItem::onPresetClicked(GtkButton*, gpointer data) {
     auto* buttonData = static_cast<PresetButtonData*>(data);
-    const ToolPreset* preset = buttonData->item->settings.getToolPresets().findById(buttonData->presetId);
+    PresetFavoritesItem* item = buttonData->item;
+    /*
+     * Plan 007, step 4: reaching for a favourite preset is the moment the tip about the strip is
+     * about. It is offered against the strip and not against the button that was clicked, because
+     * applying the preset rebuilds the strip and the clicked button is one of the widgets that goes.
+     */
+    if (item->strip != nullptr) {
+        xoj::gui::TipService::offerAt(item->strip, xoj::gui::TipService::Tip::FavoritePresets);
+    }
+
+    const ToolPreset* preset = item->settings.getToolPresets().findById(buttonData->presetId);
     if (preset == nullptr) {
         return;  // The preset went away between the click and the lookup.
     }
-    buttonData->item->adapter.applyPreset(*preset);
+    item->adapter.applyPreset(*preset);
 }
 
 void PresetFavoritesItem::rebuildStrip() {

@@ -72,6 +72,20 @@ auto TipService::of(GtkWindow* window) -> TipService* {
     return static_cast<TipService*>(g_object_get_data(G_OBJECT(window), TIP_SERVICE_DATA_KEY));
 }
 
+void TipService::offerAt(GtkWidget* widget, Tip tip) {
+    if (widget == nullptr) {
+        return;
+    }
+    GtkWidget* toplevel = gtk_widget_get_toplevel(widget);
+    if (toplevel == nullptr || !GTK_IS_WINDOW(toplevel)) {
+        return;
+    }
+    TipService* tips = of(GTK_WINDOW(toplevel));
+    if (tips != nullptr) {
+        tips->offer(tip, widget);
+    }
+}
+
 TipService::TipService(GtkWindow* window, Settings* settings): window(window), settings(settings) {
     // A popover is anchored to a widget inside its window: GTK asserts when it is handed the window.
     GtkWidget* anchor = gtk_bin_get_child(GTK_BIN(window));
