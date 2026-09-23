@@ -415,6 +415,73 @@ void Settings::saveToolPresets(xmlNodePtr root) {
     }
 }
 
+/**
+ * Plan 006: the dashboard's own element.
+ *
+ * The whole element is read at once, because the two lists it holds are lists: their order is what
+ * the user arranged, and an entry that cannot be read is skipped rather than allowed to abort the
+ * rest of the profile.
+ */
+void Settings::parseDashboard(xmlNodePtr cur) {
+    std::vector<std::string> pinned;
+    std::vector<DashboardFolder> folders;
+
+    for (xmlNodePtr x = cur->children; x != nullptr; x = x->next) {
+        if (x->type != XML_ELEMENT_NODE) {
+            continue;
+        }
+
+        xmlChar* path = xmlGetProp(x, reinterpret_cast<const xmlChar*>("path"));
+        if (path == nullptr) {
+            g_warning("Settings::parseDashboard: a %s without a path", x->name);
+            continue;
+        }
+        const std::string stored = reinterpret_cast<const char*>(path);
+        xmlFree(path);
+
+        if (!xmlStrcmp(x->name, reinterpret_cast<const xmlChar*>("pinned"))) {
+            if (!stored.empty() && std::find(pinned.begin(), pinned.end(), stored) == pinned.end()) {
+                pinned.emplace_back(stored);
+            }
+            continue;
+        }
+
+        if (!xmlStrcmp(x->name, reinterpret_cast<const xmlChar*>("folder"))) {
+            xmlChar* recursive = xmlGetProp(x, reinterpret_cast<const xmlChar*>("recursive"));
+            const bool recursiveFlag =
+                    recursive != nullptr && strcmp(reinterpret_cast<const char*>(recursive), "true") == 0;
+            xmlFree(recursive);
+
+            const auto known = [&stored](const DashboardFolder& listed) { return listed.path == stored; };
+            if (!stored.empty() && std::find_if(folders.begin(), folders.end(), known) == folders.end()) {
+                folders.push_back(DashboardFolder{stored, recursiveFlag});
+            }
+            continue;
+        }
+
+        g_warning("Settings::parseDashboard: unknown XML node: %s", x->name);
+    }
+
+    this->dashboardPinnedFiles = std::move(pinned);
+    this->dashboardFolders = std::move(folders);
+}
+
+void Settings::saveDashboard(xmlNodePtr root) {
+    xmlNodePtr dashboard = xmlNewChild(root, nullptr, reinterpret_cast<const xmlChar*>("dashboard"), nullptr);
+
+    for (const std::string& file: this->dashboardPinnedFiles) {
+        xmlNodePtr node = xmlNewChild(dashboard, nullptr, reinterpret_cast<const xmlChar*>("pinned"), nullptr);
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("path"), reinterpret_cast<const xmlChar*>(file.c_str()));
+    }
+
+    for (const DashboardFolder& folder: this->dashboardFolders) {
+        xmlNodePtr node = xmlNewChild(dashboard, nullptr, reinterpret_cast<const xmlChar*>("folder"), nullptr);
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("path"), reinterpret_cast<const xmlChar*>(folder.path.c_str()));
+        xmlSetProp(node, reinterpret_cast<const xmlChar*>("recursive"),
+                   reinterpret_cast<const xmlChar*>(folder.recursive ? "true" : "false"));
+    }
+}
+
 void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Parse data map
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("data"))) {
@@ -433,6 +500,12 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     // Plan 003: the named tool presets, in their own element so their order is kept.
     if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("toolPresets"))) {
         parseToolPresets(cur);
+        return;
+    }
+
+    // Plan 006: the dashboard's pinned files and watched folders, in their own element.
+    if (!xmlStrcmp(cur->name, reinterpret_cast<const xmlChar*>("dashboard"))) {
+        parseDashboard(cur);
         return;
     }
 
@@ -1142,6 +1215,9 @@ void Settings::save() {
     SAVE_INT_PROP(favoritePresetCount);
     saveToolPresets(root);
 
+    // Plan 006: the dashboard's pinned files and watched folders.
+    saveDashboard(root);
+
     saveProperty("lastSavePath", char_cast(this->lastSavePath.u8string().c_str()), root);
     saveProperty("lastOpenPath", char_cast(this->lastOpenPath.u8string().c_str()), root);
     saveProperty("lastImagePath", char_cast(this->lastImagePath.u8string().c_str()), root);
@@ -1682,6 +1758,109 @@ void Settings::setSidebarPageLayoutMode(SidebarPageLayoutMode layoutMode) {
     this->sidebarPageLayoutMode = layoutMode;
 
     save();
+}
+
+/* Plan 006: the dashboard's pinned files and watched folders. */
+
+namespace {
+/// The stored form of a path. UTF-8, so a profile written on one platform reads the same on another.
+auto storedPath(const fs::path& path) -> std::string { return std::string(char_cast(path.u8string())); }
+/// The path a stored string means. Nothing is resolved here: the stored path is what the user chose.
+auto pathFromStored(const std::string& stored) -> fs::path {
+    return fs::path(std::u8string(stored.begin(), stored.end()));
+}
+}  // namespace
+
+auto Settings::getDashboardPinnedFiles() const -> std::vector<fs::path> {
+    std::vector<fs::path> files;
+    files.reserve(this->dashboardPinnedFiles.size());
+    for (const std::string& path: this->dashboardPinnedFiles) {
+        files.emplace_back(pathFromStored(path));
+    }
+    return files;
+}
+
+void Settings::setDashboardPinnedFiles(const std::vector<fs::path>& files) {
+    std::vector<std::string> stored;
+    stored.reserve(files.size());
+    for (const fs::path& file: files) {
+        const std::string path = storedPath(file);
+        // One file, one pin: pinning the same note twice must not make the dashboard show it twice.
+        if (path.empty() || std::find(stored.begin(), stored.end(), path) != stored.end()) {
+            continue;
+        }
+        stored.emplace_back(path);
+    }
+
+    if (stored == this->dashboardPinnedFiles) {
+        return;
+    }
+    this->dashboardPinnedFiles = std::move(stored);
+    save();
+}
+
+auto Settings::pinDashboardFile(const fs::path& file) -> bool {
+    const std::string path = storedPath(file);
+    if (path.empty() || std::find(this->dashboardPinnedFiles.begin(), this->dashboardPinnedFiles.end(), path) !=
+                                this->dashboardPinnedFiles.end()) {
+        return false;
+    }
+
+    this->dashboardPinnedFiles.emplace_back(path);
+    save();
+    return true;
+}
+
+auto Settings::unpinDashboardFile(const fs::path& file) -> bool {
+    const std::string path = storedPath(file);
+    const auto first = std::remove(this->dashboardPinnedFiles.begin(), this->dashboardPinnedFiles.end(), path);
+    if (first == this->dashboardPinnedFiles.end()) {
+        return false;
+    }
+
+    this->dashboardPinnedFiles.erase(first, this->dashboardPinnedFiles.end());
+    save();
+    return true;
+}
+
+auto Settings::getDashboardFolders() const -> const std::vector<DashboardFolder>& { return this->dashboardFolders; }
+
+void Settings::setDashboardFolders(const std::vector<DashboardFolder>& folders) {
+    if (folders == this->dashboardFolders) {
+        return;
+    }
+    this->dashboardFolders = folders;
+    save();
+}
+
+auto Settings::addDashboardFolder(const fs::path& folder, bool recursive) -> bool {
+    const std::string path = storedPath(folder);
+    if (path.empty()) {
+        return false;
+    }
+
+    const auto known = [&path](const DashboardFolder& listed) { return listed.path == path; };
+    if (std::find_if(this->dashboardFolders.begin(), this->dashboardFolders.end(), known) !=
+        this->dashboardFolders.end()) {
+        return false;
+    }
+
+    this->dashboardFolders.push_back(DashboardFolder{path, recursive});
+    save();
+    return true;
+}
+
+auto Settings::removeDashboardFolder(const fs::path& folder) -> bool {
+    const std::string path = storedPath(folder);
+    const auto known = [&path](const DashboardFolder& listed) { return listed.path == path; };
+    const auto first = std::remove_if(this->dashboardFolders.begin(), this->dashboardFolders.end(), known);
+    if (first == this->dashboardFolders.end()) {
+        return false;
+    }
+
+    this->dashboardFolders.erase(first, this->dashboardFolders.end());
+    save();
+    return true;
 }
 
 auto Settings::isHighlightPosition() const -> bool { return this->highlightPosition; }

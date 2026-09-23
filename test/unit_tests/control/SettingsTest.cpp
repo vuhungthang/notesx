@@ -358,3 +358,182 @@ TEST(SettingsTest, testUnknownWorkspaceModeFallsBackToClassic) {
 
     fs::remove_all(dir);
 }
+
+/*
+ * Plan 006: the dashboard's pinned files and watched folders.
+ *
+ * What has to survive a restart is exactly the paths the user chose. The dashboard is an index over
+ * files the user owns, so saving these lists must not create, move or touch anything - a pinned file
+ * that is gone is still a pin the user can see and remove.
+ */
+
+namespace {
+
+/// A document to pin, so a test can prove that pinning it changes nothing about the file.
+auto writeNote(const fs::path& path) -> fs::path {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << "PK\x03\x04not really a document\n";
+    out.close();
+    return path;
+}
+
+auto entryCount(const fs::path& folder) -> std::size_t {
+    std::size_t count = 0;
+    for (const auto& entry: fs::directory_iterator(folder)) {
+        (void)entry;
+        count++;
+    }
+    return count;
+}
+
+}  // namespace
+
+TEST(SettingsTest, testDashboardPinsAndFoldersRoundTrip) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_dashboardSettings");
+    const fs::path file = dir / "settings.xml";
+    const fs::path unicodeNote = dir / fs::path(std::u8string(u8"a\u03c9kward \u24abath.xopp"));
+
+    {
+        Settings settings{file};
+        settings.load();
+        ASSERT_TRUE(settings.getDashboardPinnedFiles().empty());
+        ASSERT_TRUE(settings.getDashboardFolders().empty());
+
+        ASSERT_TRUE(settings.addDashboardFolder(dir / "notes", false));
+        ASSERT_TRUE(settings.addDashboardFolder(dir / "books", true));
+        EXPECT_FALSE(settings.addDashboardFolder(dir / "notes", false)) << "a folder is listed once";
+
+        ASSERT_TRUE(settings.pinDashboardFile(dir / "a.xopp"));
+        ASSERT_TRUE(settings.pinDashboardFile(dir / "b.xopp"));
+        ASSERT_TRUE(settings.pinDashboardFile(unicodeNote));
+        EXPECT_FALSE(settings.pinDashboardFile(dir / "a.xopp")) << "a file is pinned once";
+    }
+
+    Settings reloaded{file};
+    reloaded.load();
+
+    const std::vector<fs::path> pinned = reloaded.getDashboardPinnedFiles();
+    ASSERT_EQ(pinned.size(), 3U);
+    EXPECT_EQ(pinned[0], dir / "a.xopp") << "the pins keep the order the user made them in";
+    EXPECT_EQ(pinned[1], dir / "b.xopp");
+    EXPECT_EQ(pinned[2], unicodeNote) << "a path is stored as it is, whatever it contains";
+
+    const std::vector<DashboardFolder>& folders = reloaded.getDashboardFolders();
+    ASSERT_EQ(folders.size(), 2U);
+    EXPECT_EQ(folders[0].path, (dir / "notes").string());
+    EXPECT_FALSE(folders[0].recursive) << "a folder is shallow unless the user asks for its subtree";
+    EXPECT_EQ(folders[1].path, (dir / "books").string());
+    EXPECT_TRUE(folders[1].recursive);
+
+    const std::string contents = readFile(file);
+    EXPECT_NE(contents.find("<dashboard"), std::string::npos);
+    EXPECT_NE(contents.find("recursive=\"true\""), std::string::npos);
+
+    // Unpinning and unlisting are the other side of the same list.
+    EXPECT_TRUE(reloaded.unpinDashboardFile(dir / "a.xopp"));
+    EXPECT_FALSE(reloaded.unpinDashboardFile(dir / "a.xopp"));
+    EXPECT_TRUE(reloaded.removeDashboardFolder(dir / "notes"));
+    EXPECT_FALSE(reloaded.removeDashboardFolder(dir / "notes"));
+
+    Settings again{file};
+    again.load();
+    EXPECT_EQ(again.getDashboardPinnedFiles().size(), 2U);
+    ASSERT_EQ(again.getDashboardFolders().size(), 1U);
+    EXPECT_EQ(again.getDashboardFolders()[0].path, (dir / "books").string());
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testDashboardListsAreDeduplicatedWhicheverWayTheyAreSet) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_dashboardDedupe");
+    Settings settings{dir / "settings.xml"};
+    settings.load();
+
+    settings.setDashboardPinnedFiles({dir / "a.xopp", dir / "a.xopp", dir / "b.xopp"});
+    EXPECT_EQ(settings.getDashboardPinnedFiles().size(), 2U);
+
+    settings.setDashboardFolders({DashboardFolder{(dir / "notes").string(), false},
+                                  DashboardFolder{(dir / "notes").string(), true}});
+    EXPECT_EQ(settings.getDashboardFolders().size(), 2U) << "the setter stores what it is given";
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testDashboardPathsPointAtFilesWithoutTouchingThem) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_dashboardUntouched");
+    const fs::path note = writeNote(dir / "notes.xopp");
+    const fs::path absent = dir / "not-there.xopp";
+    const auto modified = fs::last_write_time(note);
+    const auto size = fs::file_size(note);
+
+    {
+        Settings settings{dir / "settings.xml"};
+        settings.load();
+        settings.pinDashboardFile(note);
+        settings.pinDashboardFile(absent);
+        ASSERT_TRUE(settings.addDashboardFolder(dir, false));
+    }
+
+    Settings reloaded{dir / "settings.xml"};
+    reloaded.load();
+    EXPECT_EQ(reloaded.getDashboardPinnedFiles().size(), 2U);
+    ASSERT_EQ(reloaded.getDashboardFolders().size(), 1U);
+
+    // The dashboard lists what is there; it never makes something be there, and it never changes
+    // what it lists.
+    EXPECT_TRUE(fs::exists(note));
+    EXPECT_FALSE(fs::exists(absent)) << "a listed path that is gone is not created";
+    EXPECT_EQ(fs::last_write_time(note), modified);
+    EXPECT_EQ(fs::file_size(note), size);
+    EXPECT_EQ(entryCount(dir), 2U) << "the folder gained the settings file and nothing else";
+
+    // The same holds for removing the folder: only the settings file changes.
+    EXPECT_TRUE(reloaded.removeDashboardFolder(dir));
+    EXPECT_TRUE(fs::exists(note));
+    EXPECT_EQ(entryCount(dir), 2U);
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testProfileFromBeforeTheDashboardLoadsWithoutOne) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_dashboardOldProfile");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, "<property name=\"iconTheme\" value=\"iconsColor\"/>\n");
+
+    Settings settings{file};
+    ASSERT_NO_THROW(settings.load());
+    EXPECT_TRUE(settings.getDashboardPinnedFiles().empty());
+    EXPECT_TRUE(settings.getDashboardFolders().empty());
+
+    // Saving writes the element, so the next launch has one to read.
+    settings.transactionStart();
+    settings.transactionEnd();
+    EXPECT_NE(readFile(file).find("<dashboard"), std::string::npos);
+
+    Settings reloaded{file};
+    reloaded.load();
+    EXPECT_TRUE(reloaded.getDashboardPinnedFiles().empty());
+
+    fs::remove_all(dir);
+}
+
+TEST(SettingsTest, testADashboardEntryWithoutAPathIsSkipped) {
+    const fs::path dir = freshSettingsDir("xournalpp-test-units_dashboardBadEntry");
+    const fs::path file = dir / "settings.xml";
+    writeSettingsFile(file, "<dashboard>\n"
+                            "  <pinned path=\"" + (dir / "kept.xopp").string() + "\"/>\n"
+                            "  <pinned/>\n"
+                            "  <folder recursive=\"true\"/>\n"
+                            "  <nonsense path=\"x\"/>\n"
+                            "</dashboard>\n");
+
+    Settings settings{file};
+    ASSERT_NO_THROW(settings.load());
+
+    // A malformed entry is skipped, and the good ones around it are still read.
+    ASSERT_EQ(settings.getDashboardPinnedFiles().size(), 1U);
+    EXPECT_EQ(settings.getDashboardPinnedFiles()[0], dir / "kept.xopp");
+    EXPECT_TRUE(settings.getDashboardFolders().empty());
+
+    fs::remove_all(dir);
+}

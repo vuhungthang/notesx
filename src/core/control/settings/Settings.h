@@ -50,6 +50,21 @@ class ButtonConfig;
 class InputDevice;
 class PageTemplateSettings;
 
+/**
+ * Plan 006: one folder the dashboard lists, as the user asked for it.
+ *
+ * Shallow by default; `recursive` is the explicit opt-in for the folder's subtree.
+ */
+struct DashboardFolder {
+    /// The path, as the user chose it. Kept verbatim, never followed or rewritten.
+    std::string path;
+    bool recursive = false;
+
+    auto operator==(const DashboardFolder& other) const -> bool {
+        return path == other.path && recursive == other.recursive;
+    }
+};
+
 class SAttribute {
 public:
     SAttribute();
@@ -135,6 +150,15 @@ private:
      */
     void parseToolPresets(xmlNodePtr cur);
     void saveToolPresets(xmlNodePtr root);
+
+    /**
+     * Plan 006: read/write the <dashboard> element - the files the user pinned and the folders the
+     * dashboard lists. These are paths and nothing else: the dashboard is an index over files the
+     * user owns, so a file that moves or disappears leaves a stale path behind, never a state the
+     * application has to repair.
+     */
+    void parseDashboard(xmlNodePtr cur);
+    void saveDashboard(xmlNodePtr root);
 
     static xmlNodePtr savePropertyDouble(const gchar* key, double value, xmlNodePtr parent);
     static xmlNodePtr saveProperty(const gchar* key, int value, xmlNodePtr parent);
@@ -408,6 +432,28 @@ public:
      */
     SidebarPageLayoutMode getSidebarPageLayoutMode() const;
     void setSidebarPageLayoutMode(SidebarPageLayoutMode layoutMode);
+
+    /**
+     * Plan 006: the dashboard's pinned files and watched folders.
+     *
+     * Pinned files keep the order the user pinned them in. Adding a folder, naming one recursively
+     * or removing one changes this list only: the dashboard never creates, moves, renames or
+     * rewrites anything a user owns, and a path that no longer exists is kept as it is so the user
+     * can find out what happened to it.
+     */
+    auto getDashboardPinnedFiles() const -> std::vector<fs::path>;
+    void setDashboardPinnedFiles(const std::vector<fs::path>& files);
+    /// Pin a file unless it is pinned already. Returns whether the list changed.
+    auto pinDashboardFile(const fs::path& file) -> bool;
+    /// Unpin a file. Returns whether the list changed.
+    auto unpinDashboardFile(const fs::path& file) -> bool;
+
+    auto getDashboardFolders() const -> const std::vector<DashboardFolder>&;
+    void setDashboardFolders(const std::vector<DashboardFolder>& folders);
+    /// Start listing a folder unless it is listed already. Returns whether the list changed.
+    auto addDashboardFolder(const fs::path& folder, bool recursive = false) -> bool;
+    /// Stop listing a folder. Returns whether the list changed.
+    auto removeDashboardFolder(const fs::path& folder) -> bool;
 
     bool isHighlightPosition() const;
     void setHighlightPosition(bool highlight);
@@ -867,6 +913,15 @@ private:
     ToolPresetList toolPresets = ToolPresetList::seedDefaults();
     /// How many favourites Focus shows directly.
     int favoritePresetCount = static_cast<int>(ToolPresetList::MAX_FAVORITES);
+
+    /**
+     * Plan 006: the dashboard's own two lists, kept as UTF-8 paths.
+     *
+     * They hold paths, not documents: what the dashboard shows about a file is read from the file
+     * itself, so these may point at anything, including files that are gone.
+     */
+    std::vector<std::string> dashboardPinnedFiles;
+    std::vector<DashboardFolder> dashboardFolders;
 
     /**
      *  The last saved folder
