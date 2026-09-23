@@ -195,6 +195,17 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
     g_signal_connect_swapped(builder.get("rdWorkspaceClassic"), "toggled",
                              G_CALLBACK(+[](SettingsDialog* self) { self->updateWorkspaceMenubarCheckbox(); }), this);
 
+    /*
+     * Plan 007, step 4: showing the tips again is something the user does, not something they ask
+     * for and then confirm - so it is applied at once, and the checkbox beside it is refreshed to
+     * what the reset leaves behind (the tips switched back on).
+     */
+    g_signal_connect_swapped(builder.get("btResetInterfaceTips"), "clicked", G_CALLBACK(+[](SettingsDialog* self) {
+                                 self->settings->resetInterfaceTips();
+                                 self->loadCheckbox("cbInterfaceTips", self->settings->isInterfaceTipsEnabled());
+                             }),
+                             this);
+
     g_signal_connect(builder.get("cbUseSpacesAsTab"), "toggled",
                      G_CALLBACK(+[](GtkCheckButton* checkBox, SettingsDialog* self) {
                          self->enableWithCheckbox("cbUseSpacesAsTab", "numberOfSpacesContainer");
@@ -645,6 +656,10 @@ void SettingsDialog::load() {
                                                                         "rdWorkspaceFocus")),
                                  true);
 
+    // Plan 007, step 4: the one switch over the workspace explanation and the tips, next to the
+    // button that forgets what has been shown.
+    loadCheckbox("cbInterfaceTips", settings->isInterfaceTipsEnabled());
+
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("preloadPagesBefore")),
                               static_cast<double>(settings->getPreloadPagesBefore()));
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("preloadPagesAfter")),
@@ -938,6 +953,9 @@ void SettingsDialog::save() {
     settings->setMenubarVisible(getCheckbox("cbHideMenubarStartup"));
     settings->setFilepathInTitlebarShown(getCheckbox("cbShowFilepathInTitlebar"));
     settings->setPageNumberInTitlebarShown(getCheckbox("cbShowPageNumberInTitlebar"));
+
+    // Plan 007, step 4: the tips are switched off (and back on) with the rest of the interface.
+    settings->setInterfaceTipsEnabled(getCheckbox("cbInterfaceTips"));
 
     constexpr auto spinAsUint = [&](GtkSpinButton* btn) {
         int v = gtk_spin_button_get_value_as_int(btn);

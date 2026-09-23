@@ -4384,6 +4384,86 @@ This setting can make it easier to draw with touch.</property>
                                 <property name="position">10</property>
                               </packing>
                             </child>
+                            <child>
+                              <object class="GtkFrame" id="frameInterfaceTips">
+                                <property name="name">frameInterfaceTips</property>
+                                <property name="visible">True</property>
+                                <property name="can-focus">False</property>
+                                <property name="label-xalign">0.009999999776482582</property>
+                                <child>
+                                  <object class="GtkBox" id="boxInterfaceTips">
+                                    <property name="name">boxInterfaceTips</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <property name="margin-bottom">12</property>
+                                    <property name="orientation">vertical</property>
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkCheckButton" id="cbInterfaceTips">
+                                        <property name="label" translatable="yes">Show interface tips</property>
+                                        <property name="name">cbInterfaceTips</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">True</property>
+                                        <property name="receives-default">False</property>
+                                        <property name="draw-indicator">True</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">0</property>
+                                      </packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="labelInterfaceTipsHint">
+                                        <property name="name">labelInterfaceTipsHint</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">False</property>
+                                        <property name="label" translatable="yes">&lt;i&gt;The one-time explanation of the workspace and the tips about what is on screen.&lt;/i&gt;</property>
+                                        <property name="use-markup">True</property>
+                                        <property name="wrap">True</property>
+                                        <property name="xalign">0</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">1</property>
+                                      </packing>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="btResetInterfaceTips">
+                                        <property name="name">btResetInterfaceTips</property>
+                                        <property name="label" translatable="yes">Show interface tips again</property>
+                                        <property name="visible">True</property>
+                                        <property name="can-focus">True</property>
+                                        <property name="receives-default">False</property>
+                                        <property name="halign">start</property>
+                                        <property name="tooltip-text" translatable="yes">Forget what has been shown, so the workspace explanation and the tips appear once more.</property>
+                                      </object>
+                                      <packing>
+                                        <property name="expand">False</property>
+                                        <property name="fill">True</property>
+                                        <property name="position">2</property>
+                                      </packing>
+                                    </child>
+                                  </object>
+                                </child>
+                                <child type="label">
+                                  <object class="GtkLabel" id="labelInterfaceTips">
+                                    <property name="name">labelInterfaceTips</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="label" translatable="yes">Interface tips</property>
+                                  </object>
+                                </child>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="fill">True</property>
+                                <property name="position">11</property>
+                              </packing>
+                            </child>
                           </object>
                         </child>
                       </object>
