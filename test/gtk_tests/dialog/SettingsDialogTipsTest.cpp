@@ -44,6 +44,18 @@ namespace {
 constexpr const char* TIPS_SWITCH_LABEL = "Show interface tips";
 constexpr const char* TIPS_REPLAY_LABEL = "Show interface tips again";
 
+/// Runs what the main context has ready until it has nothing left.
+///
+/// A widget that queues a one-shot callback and is gone before it runs leaves a source in the main
+/// context holding a pointer to the dead widget, which the next test's first iteration then calls:
+/// draining before the window goes is what keeps one test from ending in the next one.
+void drain() {
+    for (int i = 0; i < 50 && g_main_context_pending(nullptr); i++) {
+        while (g_main_context_iteration(nullptr, FALSE)) {}
+        g_usleep(10000);
+    }
+}
+
 /// The button label of a widget, or an empty string for a widget that is not a button.
 auto buttonLabel(GtkWidget* widget) -> std::string {
     if (!GTK_IS_BUTTON(widget)) {
@@ -130,6 +142,9 @@ struct SettingsDialogCase {
         this->dialog = std::make_unique<SettingsDialog>(&this->glade, this->control->getSettings(), this->control.get(),
                                                         paletteDirectories, [this]() { this->callbacks++; });
     }
+
+    /// The window goes with the case, so anything it queued runs before it does.
+    ~SettingsDialogCase() { drain(); }
 
     auto settings() const -> Settings* { return this->control->getSettings(); }
     auto window() const -> GtkWidget* { return GTK_WIDGET(this->dialog->getWindow()); }
