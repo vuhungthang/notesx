@@ -78,6 +78,46 @@
                 </child>
             </object>
         </child>
+        <!--
+            Plan 009: adding a page without a keyboard or a mouse. The page toolbar is anchored
+            below the scrolling thumbnails, so a row placed here stays on screen whatever the page
+            list is doing. It is the bottom-most row and it spans the sidebar, which makes it the
+            easiest control to hit with a stylus; the words "Add page" are beside the application's
+            page-add icon so the control does not have to be guessed at. It runs the same
+            insert-after action the context menu runs, so undo and page navigation are unchanged.
+        -->
+        <child>
+            <object class="GtkButton" id="btPagesAdd">
+                <property name="name">btPagesAdd</property>
+                <property name="action-name">win.new-page-after</property>
+                <property name="tooltip-text">Add a page after this one</property>
+                <property name="hexpand">1</property>
+                <style>
+                    <class name="xoj-control-touch"/>
+                </style>
+                <child>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <property name="spacing">6</property>
+                        <property name="halign">center</property>
+                        <property name="valign">center</property>
+                        <child>
+                            <object class="GtkImage">
+                                <property name="visible">1</property>
+                                <property name="can-focus">0</property>
+                                <property name="icon-name">xopp-page-add</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="visible">1</property>
+                                <property name="label" translatable="yes">Add page</property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
     </object>
     <menu id="PreviewPagesContextMenu">
         <section>

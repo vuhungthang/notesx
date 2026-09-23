@@ -50,6 +50,9 @@ constexpr int WIDE_SIDEBAR_WIDTH = 500;
 constexpr auto PAGE_TOOLBAR_ID = "PreviewPagesToolbar";
 constexpr auto PAGE_MENU_ID = "PreviewPagesContextMenu";
 
+/// The prominent, pen-sized Add page control of Plan 009.
+constexpr auto ADD_PAGE_BUTTON_ID = "btPagesAdd";
+
 /// Every widget at or below `root`, in tree order.
 void collectWidgets(GtkWidget* root, std::vector<GtkWidget*>& out) {
     out.emplace_back(root);
@@ -271,7 +274,12 @@ class PageToolbarStructureTest: public GtkTest {
         EXPECT_TRUE(hasCssClass(toolbar, "toolbar"));
 
         const std::vector<GtkWidget*> controls = buttonsOf(toolbar);
-        ASSERT_EQ(controls.size(), 6U) << "four page actions and two density modes";
+        ASSERT_EQ(controls.size(), 7U) << "four page actions, two density modes and the Add page control";
+
+        // The Add page control (Plan 009) is the one control that is not a compact icon button:
+        // it is the pen-sized row at the bottom, and it stays that size for the reason above.
+        GtkWidget* addPage = byId(toolbar, ADD_PAGE_BUTTON_ID);
+        ASSERT_NE(addPage, nullptr) << "the toolbar has to carry the Add page control";
 
         // The navigator names its own controls, which is what a screen reader reads.
         SidebarPreviewPages::applyToolbarAccessibility(toolbar);
@@ -291,8 +299,11 @@ class PageToolbarStructureTest: public GtkTest {
             EXPECT_EQ(accessibleName(control), std::string(tooltip));
             EXPECT_TRUE(gtk_widget_get_has_tooltip(control)) << "a tooltip that never shows helps nobody";
 
-            // Plan 001's dense layout class, which is what makes a row of four fit 150px.
-            EXPECT_TRUE(hasCssClass(control, "xoj-control-compact"));
+            // Plan 001's dense layout class, which is what makes a row of four fit 150px. The
+            // Add page control is deliberately not compact: it is the large touch target.
+            if (control != addPage) {
+                EXPECT_TRUE(hasCssClass(control, "xoj-control-compact"));
+            }
         }
 
         // The density choice is two toggles, and it is the only choice in the toolbar.
@@ -396,6 +407,180 @@ class PageToolbarNarrowTest: public GtkTest {
     }
 };
 TEST_F(PageToolbarNarrowTest, theToolbarFitsTheNarrowestSidebar) {}
+
+/*
+ * Plan 009: adding a page with a pen must not need a keyboard, a menu hunt or a mouse. The page
+ * toolbar is anchored below the scrolling thumbnails, so a control placed in it stays on screen
+ * while the pages scroll. What is checked here is that such a control exists: it is the bottom,
+ * full-width row, it says the words "Add page" beside the existing page-add icon rather than
+ * being an icon to discover, and it runs the canonical insert-after action, so undo and page
+ * navigation behave exactly as they do from the context menu.
+ */
+class PageToolbarAddPageTest: public GtkTest {
+    void runTest(GtkApplication*) override {
+        PageToolbar pageToolbar;
+        GtkWidget* toolbar = pageToolbar.toolbar();
+        ASSERT_NE(toolbar, nullptr);
+
+        GtkWidget* addPage = byId(toolbar, ADD_PAGE_BUTTON_ID);
+        ASSERT_NE(addPage, nullptr) << "the page toolbar has no Add page control";
+        ASSERT_TRUE(GTK_IS_BUTTON(addPage));
+
+        // The canonical action, not a new one: insert after the current page.
+        const char* actionName = gtk_actionable_get_action_name(GTK_ACTIONABLE(addPage));
+        ASSERT_NE(actionName, nullptr) << "the Add page control runs no action";
+        EXPECT_EQ(std::string(actionName), "win.new-page-after");
+
+        // The pen target class: the geometry convention Plan 001 set for touch input.
+        EXPECT_TRUE(hasCssClass(addPage, "xoj-control-touch")) << "the control is not sized for a stylus";
+
+        // Full width, so a stylus cannot miss it.
+        EXPECT_TRUE(gtk_widget_get_hexpand(addPage)) << "the Add page control has to fill the sidebar width";
+
+        // The bottom-most row: the last child row of the toolbar holds it.
+        GList* rows = gtk_container_get_children(GTK_CONTAINER(toolbar));
+        ASSERT_NE(rows, nullptr);
+        GtkWidget* lastRow = GTK_WIDGET(g_list_last(rows)->data);
+        bool onBottomRow = false;
+        for (GtkWidget* widget: allWidgets(lastRow)) {
+            if (widget == addPage) {
+                onBottomRow = true;
+            }
+        }
+        EXPECT_TRUE(onBottomRow) << "the Add page control is not the bottom row of the toolbar";
+        g_list_free(rows);
+
+        // A visible, translatable label beside the page-add icon: words a user reads, not an icon
+        // they have to guess at.
+        bool hasLabel = false;
+        bool hasIcon = false;
+        for (GtkWidget* widget: allWidgets(addPage)) {
+            if (GTK_IS_LABEL(widget) &&
+                std::string(gtk_label_get_text(GTK_LABEL(widget))) == std::string("Add page")) {
+                hasLabel = true;
+            }
+            if (GTK_IS_IMAGE(widget)) {
+                const gchar* icon = nullptr;
+                GtkIconSize size = GTK_ICON_SIZE_INVALID;
+                gtk_image_get_icon_name(GTK_IMAGE(widget), &icon, &size);
+                if (icon != nullptr && std::string(icon) == "xopp-page-add") {
+                    hasIcon = true;
+                }
+            }
+        }
+        EXPECT_TRUE(hasLabel) << "the control has to say \"Add page\"";
+        EXPECT_TRUE(hasIcon) << "the control keeps the application's page-add icon";
+
+        // Named and reachable, like every other control of the toolbar.
+        SidebarPreviewPages::applyToolbarAccessibility(toolbar);
+        EXPECT_TRUE(gtk_widget_get_can_focus(addPage)) << "the Add page control is not reachable by keyboard";
+        const char* tooltip = gtk_widget_get_tooltip_text(addPage);
+        ASSERT_NE(tooltip, nullptr) << "the Add page control has no tooltip";
+        EXPECT_EQ(accessibleName(addPage), std::string(tooltip));
+        EXPECT_FALSE(accessibleName(addPage).empty()) << "the Add page control has no accessible name";
+    }
+};
+TEST_F(PageToolbarAddPageTest, theToolbarOffersAProminentPenSizedAddPageControl) {}
+
+/*
+ * Plan 009: the Add page control runs the canonical action the window offers, so pressing it is
+ * the same path a click or the keyboard takes, and it inserts after the current page only.
+ */
+class PageToolbarAddPageActivationTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        GtkWidget* window = gtk_application_window_new(app);
+
+        ActionSpy spy;
+        spy.installOn(GTK_APPLICATION_WINDOW(window));
+
+        PageToolbar pageToolbar;
+        gtk_container_add(GTK_CONTAINER(window), pageToolbar.toolbar());
+        gtk_widget_show_all(window);
+        settle();
+
+        GtkWidget* addPage = byId(window, ADD_PAGE_BUTTON_ID);
+        ASSERT_NE(addPage, nullptr);
+
+        ASSERT_NE(g_action_map_lookup_action(G_ACTION_MAP(window), "new-page-after"), nullptr)
+                << "the window does not offer new-page-after";
+
+        g_signal_emit_by_name(addPage, "clicked");
+        settle();
+        EXPECT_EQ(spy.count("new-page-after"), 1) << "the Add page control inserts a page after this one";
+        EXPECT_EQ(spy.count("new-page-before"), 0) << "Add page inserts after the current page, not before it";
+
+        gtk_widget_destroy(window);
+        settle();
+    }
+};
+TEST_F(PageToolbarAddPageActivationTest, theAddPageControlRunsTheCanonicalInsertAfterAction) {}
+
+/*
+ * Plan 009: the Add page control is a pen target of at least 44px, and it gets that size from the
+ * stylesheet's own touch class rather than from a painted height. The compact controls above it
+ * keep their compact size: the new row must not grow them.
+ */
+class PageToolbarAddPageSizeTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        const std::string css = applicationStylesheet();
+        ASSERT_FALSE(css.empty()) << "ui/xournalpp.css has to be readable";
+        // Plan 001's touch geometry class, and the scoped rule that gives the row its padding.
+        EXPECT_NE(css.find(".xoj-control-touch"), std::string::npos)
+                << "the touch control class is not in the application stylesheet";
+        EXPECT_NE(css.find("#btPagesAdd"), std::string::npos)
+                << "the Add page control has no scoped rule in the application stylesheet";
+
+        CriticalWatch criticals;
+
+        GtkCssProvider* provider = gtk_css_provider_new();
+        const std::string path = (std::filesystem::path(GET_UI_FOLDER) / "xournalpp.css").string();
+        GError* error = nullptr;
+        ASSERT_TRUE(gtk_css_provider_load_from_path(provider, path.c_str(), &error))
+                << (error != nullptr ? error->message : "the stylesheet did not load");
+        g_clear_error(&error);
+        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider),
+                                                  GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+        GtkWidget* window = gtk_application_window_new(app);
+        gtk_window_set_default_size(GTK_WINDOW(window), NARROW_SIDEBAR_WIDTH, 600);
+
+        PageToolbar pageToolbar;
+        gtk_container_add(GTK_CONTAINER(window), pageToolbar.toolbar());
+        gtk_widget_show_all(window);
+        settle();
+
+        GtkWidget* addPage = byId(window, ADD_PAGE_BUTTON_ID);
+        ASSERT_NE(addPage, nullptr);
+
+        int minHeight = 0;
+        gtk_widget_get_preferred_height(addPage, &minHeight, nullptr);
+        EXPECT_GE(minHeight, 44)
+                << "the Add page control is a pen target, so it is at least 44px tall; it asked for " << minHeight;
+
+        // It still fits the narrowest sidebar it has to be usable at.
+        int minWidth = 0;
+        gtk_widget_get_preferred_width(addPage, &minWidth, nullptr);
+        EXPECT_LE(minWidth, NARROW_SIDEBAR_WIDTH)
+                << "the Add page control asks for " << minWidth << "px, which the narrowest sidebar cannot give";
+
+        // The compact controls above it keep their own size: the new row must not resize them.
+        for (const char* id: {"btPagesMoveUp", "btPagesMoveDown", "btPagesDuplicate", "btPagesDelete"}) {
+            GtkWidget* control = byId(window, id);
+            ASSERT_NE(control, nullptr) << id;
+            int controlHeight = 0;
+            gtk_widget_get_preferred_height(control, &controlHeight, nullptr);
+            EXPECT_LE(controlHeight, 36) << id << " grew with the Add page row";
+        }
+
+        gtk_widget_destroy(window);
+        settle();
+        EXPECT_EQ(criticals.count(), 0U) << criticals.report();
+
+        gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider));
+        g_object_unref(provider);
+    }
+};
+TEST_F(PageToolbarAddPageSizeTest, theAddPageControlIsAPenSizedFullWidthRowThatLeavesTheCompactsAlone) {}
 
 /*
  * Plan 005, step 4: the page actions are in the sidebar's context menu, next to the export of the

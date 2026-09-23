@@ -358,12 +358,24 @@ toolbar.editing {
 }
 
 /*
- * The page toolbar holds two rows: the page actions and the density choice.
- * They are rows rather than one line so the narrowest sidebar still fits every
- * control at the 32x32 dense-layout size (.xoj-control-compact).
+ * The page toolbar holds the compact page actions row, the density choice row and,
+ * below them, the pen-sized Add page row (Plan 009). The compact rows stay at the
+ * 32x32 dense-layout size (.xoj-control-compact) so the narrowest sidebar still
+ * fits them; the Add page row is the one large target and takes its 44px minimum
+ * from .xoj-control-touch. Only #btPagesAdd is affected here: the padding the
+ * compact icon controls do not need, a labelled full-width button does.
  */
 #PreviewPagesToolbar {
 	padding: 0 2px;
+}
+
+#PreviewPagesToolbar #btPagesAdd {
+	padding: 0 12px;
+	margin-top: 4px;
+}
+
+#PreviewPagesToolbar #btPagesAdd label {
+	font-weight: bold;
 }
 
 #pdfFloatingToolGrid button:hover {
