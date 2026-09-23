@@ -13,9 +13,17 @@
 #include "control/settings/SettingsEnums.h"  // for BUTTON_COUNT
 #include "util/glib_casts.h"
 
-#include "MainWindow.h"          // for MainWindow
-#include "ToolbarDefinitions.h"  // for ToolbarEntryDefintion
+#include "MainWindow.h"             // for MainWindow
+#include "QuickPalettePlacement.h"  // for placeSurface (Plan 008)
+#include "ToolbarDefinitions.h"     // for ToolbarEntryDefintion
 #include "XournalView.h"
+
+namespace {
+using xoj::gui::placeSurface;
+using xoj::gui::SurfaceAnchorVertical;
+using xoj::gui::SurfacePlacement;
+using xoj::gui::SurfacePlacementInput;
+}  // namespace
 
 
 FloatingToolbox::FloatingToolbox(MainWindow* theMainWindow, GtkOverlay* overlay) {
@@ -146,22 +154,23 @@ auto FloatingToolbox::getOverlayPosition(GtkOverlay* overlay, GtkWidget* widget,
         case recalcSize:
             [[fallthrough]];
         case noChange: {
-            int centerX = self->floatingToolboxX - allocation->width / 2;
-            int centerY = self->floatingToolboxY - allocation->height / 2;
+            // Plan 008: the Classic toolbox keeps its behaviour - centred on the point, clamped to
+            // the scrolled window - but the arithmetic now lives in placeSurface(), where the quick
+            // palette uses it too and where a unit test can hold it to the viewport edges.
+            SurfacePlacementInput in;
+            in.viewportWidth = gtk_widget_get_allocated_width(scrolledWindow);
+            in.viewportHeight = gtk_widget_get_allocated_height(scrolledWindow);
+            in.surfaceWidth = allocation->width;
+            in.surfaceHeight = allocation->height;
+            in.anchorX = self->floatingToolboxX;
+            in.anchorY = self->floatingToolboxY;
+            in.margin = 10.0;
+            in.avoidAnchor = false;  // Classic has always centred on the point
+            in.vertical = SurfaceAnchorVertical::Centered;
 
-            // Clamp to scrolled window bounds with margin
-            constexpr int margin = 10;
-            int minX = margin;
-            int maxX = gtk_widget_get_allocated_width(scrolledWindow) - allocation->width - margin;
-            int minY = margin;
-            int maxY = gtk_widget_get_allocated_height(scrolledWindow) - allocation->height - margin;
-
-            // Ensure valid clamp bounds when toolbox is larger than viewport
-            maxX = std::max(maxX, minX);
-            maxY = std::max(maxY, minY);
-
-            allocation->x = std::clamp(centerX, minX, maxX);
-            allocation->y = std::clamp(centerY, minY, maxY);
+            const SurfacePlacement placement = placeSurface(in);
+            allocation->x = static_cast<int>(placement.x);
+            allocation->y = static_cast<int>(placement.y);
             self->floatingToolboxState = noChange;
             break;
         }
