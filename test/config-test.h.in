@@ -23,6 +23,13 @@
 #define GET_UI_FOLDER std::u8string(PROJECT_SOURCE_DIR) + u8"/ui/"
 
 /**
+ * The page templates the application reads through its data path, as a folder of their own in the
+ * build tree. A test that builds a Control needs them: without them the page type handler reports
+ * the missing file to the user, through a message box, in the middle of a test.
+ */
+#define GET_PAGE_TEMPLATE_FOLDER std::u8string(u8"@PROJECT_BINARY_DIR@") + u8"/test/page-templates/"
+
+/**
  * Show speed benchmarks of tests
  */
 #cmakedefine TEST_CHECK_SPEED

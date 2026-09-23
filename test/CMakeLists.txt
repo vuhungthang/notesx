@@ -46,6 +46,15 @@ configure_file (
     ESCAPE_QUOTES @ONLY
 )
 
+# The page templates a Control reads through its data path, in a directory of their own: the
+# toolbar configs the build generates beside them are the application's toolbar, which is not what
+# a test of the document's pages is about.
+configure_file (
+    "${PROJECT_SOURCE_DIR}/resources-templates/pagetemplates.ini.in"
+    "${PROJECT_BINARY_DIR}/test/page-templates/pagetemplates.ini"
+    COPYONLY
+)
+
 ###############################################################################
 # Define test-units
 ###############################################################################
