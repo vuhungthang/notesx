@@ -67,6 +67,25 @@ TEST(GestureReferenceTest, theDisableHintNamesTheSettingItWouldTurnOff) {
     EXPECT_TRUE(row->enabled);
 }
 
+/*
+ * Plan 008, step 4 hit its stop condition: the circle is recognised and then always left as ink,
+ * because a selection cannot be one undo step. The reference must say that rather than promising a
+ * selection - and it must say it even for a profile that still holds the gesture on.
+ */
+TEST(GestureReferenceTest, theGestureThisBuildCannotCarryOutSaysSo) {
+    GestureSettings settings = GestureSettings::defaults();
+    settings.circleToSelectEnabled = true;  // an older profile may still hold it on
+
+    const GestureReferenceRow circle = *gestureReferenceRow(settings, GestureKind::Circle);
+    EXPECT_FALSE(circle.available) << "the circle cannot be carried out, so it is not offered as if it could";
+    EXPECT_NE(circle.binding.find("Not available yet"), std::string::npos)
+            << "the line says the circle is not available yet";
+    EXPECT_NE(circle.detail.find("ink"), std::string::npos) << "and that the circle stays ink";
+
+    const GestureReferenceRow scribble = *gestureReferenceRow(settings, GestureKind::Scribble);
+    EXPECT_TRUE(scribble.available) << "the scribble is a gesture this build carries out";
+}
+
 TEST(GestureReferenceTest, aGestureNobodyHasIsNotInvented) {
     const std::vector<GestureReferenceRow> rows = buildGestureReference(GestureSettings::defaults());
     for (const GestureReferenceRow& row: rows) {

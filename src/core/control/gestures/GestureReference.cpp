@@ -24,12 +24,19 @@ GestureReferenceRow rowFor(const GestureSettings& settings, GestureKind kind) {
     switch (kind) {
         case GestureKind::Circle:
             row.title = _("Circle to select");
-            row.detail = _("Draw a large circle around what you want to select. It has to close, be round, and be "
-                           "much bigger than a letter - ordinary loops are left as ink.");
-            row.binding = settings.circleToSelectEnabled ?
-                                  _("On. Only a clear, closed circle is acted on - anything doubtful is left as "
-                                    "ink - and one Undo takes the selection back.") :
-                                  _("Off. Turn it on in the gesture settings when you want it.");
+            /*
+             * Plan 008, step 4 hit its stop condition: a selection is not a document edit in this
+             * application, so the action cannot be one undo group, and the policy refuses it - the
+             * circle is recognised and then always left as ink (see CircleGestureRecognizer and
+             * GestureCommitGtkTest::circleToSelectIsRefusedForWantOfAnUndoGroup). The reference must
+             * not offer a selection this build does not make.
+             */
+            row.available = false;
+            row.detail = _("Draw a large circle around what you want to select. This build recognises the "
+                           "circle, but a selection cannot yet be undone as one step, so the circle is left "
+                           "as ordinary ink.");
+            row.binding = _("Not available yet. The circle is recognised and then left as ink - nothing here "
+                            "switches it on - until a selection can be taken back in a single step.");
             row.settingId = "circleToSelectEnabled";
             break;
         case GestureKind::Scribble:

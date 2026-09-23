@@ -146,6 +146,17 @@ auto system_single_byte_filename(const fs::path& path) -> std::string;
  * Return the configuration folder path (may not be guaranteed to exist).
  */
 [[maybe_unused]] [[nodiscard]] fs::path getConfigFolder();
+
+/**
+ * Redirect the configuration folder that getConfigFolder() - and everything derived from it - uses.
+ * An empty `folder` restores the platform's own folder.
+ *
+ * This is the seam a test that starts a real application uses to keep its settings out of the
+ * user's profile. The environment is not enough: GLib caches the user configuration directory for
+ * the lifetime of the process, so an XDG_CONFIG_HOME set after start-up is not honoured.
+ */
+void setConfigFolderOverride(const fs::path& folder);
+
 [[maybe_unused]] [[nodiscard]] fs::path getConfigSubfolder(const fs::path& subfolder = "");
 /**
  * Return the path of a subfolder of the cache folder. The folder is created on the way there,

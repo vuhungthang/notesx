@@ -264,7 +264,14 @@ void SettingsDialog::loadCheckbox(const char* name, bool value) {
 
 void SettingsDialog::showGestureSettings(const xoj::gesture::GestureSettings& gesture) {
     loadCheckbox("cbGestureQuickPalette", gesture.quickPaletteEnabled);
-    loadCheckbox("cbGestureCircleToSelect", gesture.circleToSelectEnabled);
+    /*
+     * Plan 008, step 4 hit its stop condition and this build does not carry circle-to-select out: a
+     * selection cannot be one undo step, so the recognizer's circle is always left as ink. The
+     * control is therefore shown off and cannot be switched on - an enabled switch here would
+     * invite the user to turn on a gesture that does nothing - and saveGestureSettings() leaves the
+     * stored slot alone. Whatever an older profile holds stays in the file untouched.
+     */
+    loadCheckbox("cbGestureCircleToSelect", false);
     loadCheckbox("cbGestureScribbleToErase", gesture.scribbleToEraseEnabled);
     loadCheckbox("cbGestureFeedback", gesture.feedbackEnabled);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(builder.get("spGestureCircleConfidence")), gesture.circleConfidenceFloor);
@@ -276,7 +283,10 @@ void SettingsDialog::showGestureSettings(const xoj::gesture::GestureSettings& ge
 void SettingsDialog::loadGestureSettings() { this->showGestureSettings(this->settings->getGestureSettings()); }
 
 void SettingsDialog::updateGestureSensitivity() {
-    gtk_widget_set_sensitive(builder.get("spGestureCircleConfidence"), getCheckbox("cbGestureCircleToSelect"));
+    // The circle's control and its sensitivity are inert: this build recognises the circle and
+    // leaves it as ink, so neither of them may offer to switch it on.
+    gtk_widget_set_sensitive(builder.get("cbGestureCircleToSelect"), FALSE);
+    gtk_widget_set_sensitive(builder.get("spGestureCircleConfidence"), FALSE);
     gtk_widget_set_sensitive(builder.get("spGestureScribbleConfidence"), getCheckbox("cbGestureScribbleToErase"));
     // The reference follows the controls, so it is redrawn whenever one of them changes.
     this->renderGestureReference();
@@ -292,7 +302,8 @@ void SettingsDialog::renderGestureReference() {
      * question.
      */
     xoj::gesture::GestureSettings current = this->settings->getGestureSettings();
-    current.circleToSelectEnabled = getCheckbox("cbGestureCircleToSelect");
+    // The circle's control is inert, so it is not read here: what the reference says about the
+    // circle is that this build cannot carry it out, whatever the profile holds for it.
     current.scribbleToEraseEnabled = getCheckbox("cbGestureScribbleToErase");
     current.quickPaletteEnabled = getCheckbox("cbGestureQuickPalette");
     current.feedbackEnabled = getCheckbox("cbGestureFeedback");
@@ -310,8 +321,9 @@ void SettingsDialog::renderGestureReference() {
         gtk_box_pack_start(GTK_BOX(box), title, FALSE, FALSE, 0);
 
         // Named after the gesture, and carrying only what the state is, so a test can read it and a
-        // reader can see it at a glance.
-        GtkWidget* state = gtk_label_new(row.enabled ? _("On") : _("Off"));
+        // reader can see it at a glance. A gesture this build cannot carry out says so rather than
+        // reporting a stored "On" for something that will never act.
+        GtkWidget* state = gtk_label_new(!row.available ? _("Not available yet") : row.enabled ? _("On") : _("Off"));
         const std::string stateName = "gestureReferenceState-" + row.gestureId;
         gtk_widget_set_name(state, stateName.c_str());
         gtk_widget_set_halign(state, GTK_ALIGN_START);
@@ -345,13 +357,15 @@ void SettingsDialog::resetGestureSettingsToDefaults() {
 
 void SettingsDialog::saveGestureSettings() {
     /*
-     * Read the profile back and change only what this page shows. The touch tap slot is not on this
-     * page: it is off for good (Plan 008, step 6 stop condition), and writing it from a control the
-     * dialog does not offer would be inventing a value.
+     * Read the profile back and change only what this page shows. Two slots are not on this page:
+     * the touch tap slot, which is off for good (Plan 008, step 6 stop condition), and the
+     * circle-to-select slot, which this build recognises but cannot carry out (step 4 stop
+     * condition) and whose control is therefore inert. Writing either from a control the dialog
+     * does not offer would be inventing a value, and the circle's stored slot is left exactly as
+     * the profile holds it.
      */
     xoj::gesture::GestureSettings gesture = this->settings->getGestureSettings();
     gesture.quickPaletteEnabled = getCheckbox("cbGestureQuickPalette");
-    gesture.circleToSelectEnabled = getCheckbox("cbGestureCircleToSelect");
     gesture.scribbleToEraseEnabled = getCheckbox("cbGestureScribbleToErase");
     gesture.feedbackEnabled = getCheckbox("cbGestureFeedback");
     gesture.circleConfidenceFloor =

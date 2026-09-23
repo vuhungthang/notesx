@@ -286,6 +286,13 @@ auto Util::toUri(const fs::path& path) -> std::optional<std::string> {
 }
 
 auto Util::fromGFile(GFile* file) -> fs::path {
+    /*
+     * A chooser that has no file hands back a null GFile, and g_file_peek_path() does not accept
+     * one - it logs a GLib critical and leaves nothing usable behind. No file means no path.
+     */
+    if (file == nullptr) {
+        return {};
+    }
     return GFilename(g_file_peek_path(file)).toPath().value_or(fs::path());
 }
 
@@ -326,9 +333,26 @@ auto Util::getAutosaveFilepath() -> fs::path {
     return p;
 }
 
+/**
+ * The configuration folder the application uses, when a test has redirected it. Empty means the
+ * platform's own folder (see setConfigFolderOverride).
+ */
+static std::optional<fs::path> configFolderOverride;
+
 auto Util::getConfigFolder() -> fs::path {
+    if (configFolderOverride.has_value()) {
+        return *configFolderOverride;
+    }
     auto p = GFilename(g_get_user_config_dir()).toPath().value_or(fs::path());
     return (p /= CONFIG_FOLDER_NAME);
+}
+
+auto Util::setConfigFolderOverride(const fs::path& folder) -> void {
+    if (folder.empty()) {
+        configFolderOverride.reset();
+    } else {
+        configFolderOverride = folder;
+    }
 }
 
 auto Util::getConfigSubfolder(const fs::path& subfolder) -> fs::path {

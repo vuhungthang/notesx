@@ -211,6 +211,17 @@ class SettingsDialogGestureSurfaceTest: public GtkTest {
         ASSERT_NE(circleDemo, nullptr) << "circle-to-select has an example";
         ASSERT_NE(scribbleDemo, nullptr) << "scribble-to-erase has an example";
         EXPECT_TRUE(isDescendantOf(circleDemo, page));
+
+        /*
+         * Plan 008, step 4 hit its stop condition: the circle is recognised and then always left as
+         * ink, so this page must not offer to turn it on - an enabled switch would invite the user
+         * to enable a gesture that cannot act. It says why instead.
+         */
+        EXPECT_FALSE(gtk_widget_get_sensitive(circle)) << "the circle cannot be switched on in this build";
+        const std::string circleLabel = gtk_button_get_label(GTK_BUTTON(circle));
+        EXPECT_NE(circleLabel.find("not available yet"), std::string::npos) << "the control says so";
+        const std::string circleDemoText = gtk_label_get_text(GTK_LABEL(circleDemo));
+        EXPECT_NE(circleDemoText.find("Not available yet"), std::string::npos) << "and so does its example";
     }
 };
 TEST_F(SettingsDialogGestureSurfaceTest, everyGestureHasAControlOnATabOfTheSettings) {}
@@ -232,9 +243,12 @@ class SettingsDialogGestureDefaultLoadTest: public GtkTest {
 
         EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)));
         EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE)));
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_TOGGLE)))
+                << "the circle cannot be switched on: this build recognises it and leaves it as ink";
         EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_CONFIDENCE)))
-                << "the circle's sensitivity cannot be set while the circle is off";
-        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(SCRIBBLE_CONFIDENCE)));
+                << "its sensitivity is inert with it";
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(SCRIBBLE_CONFIDENCE)))
+                << "the scribble's sensitivity cannot be set while the scribble is off";
     }
 };
 TEST_F(SettingsDialogGestureDefaultLoadTest, aFreshProfileShowsTheConservativeDefaults) {}
@@ -244,32 +258,70 @@ class SettingsDialogGestureStoredLoadTest: public GtkTest {
     void runTest(GtkApplication* app) override {
         SettingsDialogCase dialogCase(app, [](Settings* settings) {
             GestureSettings gesture = settings->getGestureSettings();
-            gesture.circleToSelectEnabled = true;
-            gesture.circleConfidenceFloor = 0.8;
+            gesture.scribbleToEraseEnabled = true;
+            gesture.scribbleConfidenceFloor = 0.8;
             settings->setGestureSettings(gesture);
         });
 
-        ASSERT_NE(dialogCase.checkbox(CIRCLE_TOGGLE), nullptr);
-        ASSERT_NE(dialogCase.spin(CIRCLE_CONFIDENCE), nullptr);
         ASSERT_NE(dialogCase.checkbox(SCRIBBLE_TOGGLE), nullptr);
+        ASSERT_NE(dialogCase.spin(SCRIBBLE_CONFIDENCE), nullptr);
+        ASSERT_NE(dialogCase.checkbox(CIRCLE_TOGGLE), nullptr);
 
-        EXPECT_TRUE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE))) << "the profile turns it on";
-        EXPECT_TRUE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_CONFIDENCE)))
+        EXPECT_TRUE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE))) << "the profile turns it on";
+        EXPECT_TRUE(gtk_widget_get_sensitive(dialogCase.widget(SCRIBBLE_CONFIDENCE)))
                 << "its sensitivity is editable once it is on";
-        EXPECT_NEAR(gtk_spin_button_get_value(dialogCase.spin(CIRCLE_CONFIDENCE)), 0.8, 1e-9);
-        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE)))
-                << "the gesture that is off is still shown off";
+        EXPECT_NEAR(gtk_spin_button_get_value(dialogCase.spin(SCRIBBLE_CONFIDENCE)), 0.8, 1e-9);
+        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)))
+                << "the gesture that cannot be carried out is still shown off";
     }
 };
 TEST_F(SettingsDialogGestureStoredLoadTest, aProfileWithAGestureOnShowsItOn) {}
 
-/// Saving the dialog stores every control, and leaves the slot the dialog does not offer alone.
+/*
+ * Plan 008, step 4 hit its stop condition: the circle is recognised and then left as ink, because a
+ * selection cannot be one undo step. A profile that still holds the gesture on (an older one, or
+ * one written by a build that offered it) must not make this page promise a selection: the control
+ * is inert and says it is not available yet, and saving leaves the stored slot exactly as it was.
+ */
+class SettingsDialogGestureUnavailableCircleTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        SettingsDialogCase dialogCase(app, [](Settings* settings) {
+            GestureSettings gesture = settings->getGestureSettings();
+            gesture.circleToSelectEnabled = true;  // what the profile holds
+            settings->setGestureSettings(gesture);
+        });
+        ASSERT_NE(dialogCase.checkbox(CIRCLE_TOGGLE), nullptr);
+        ASSERT_TRUE(dialogCase.settings()->getGestureSettings().circleToSelectEnabled)
+                << "the profile this dialog was built for holds the circle on";
+
+        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)))
+                << "the page does not show a gesture it cannot carry out as on";
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_TOGGLE)));
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_CONFIDENCE)));
+
+        GtkWidget* ok = dialogCase.ok();
+        ASSERT_NE(ok, nullptr);
+        gtk_button_clicked(GTK_BUTTON(ok));
+
+        EXPECT_TRUE(dialogCase.settings()->getGestureSettings().circleToSelectEnabled)
+                << "the stored slot this page cannot offer is left untouched by a save";
+    }
+};
+TEST_F(SettingsDialogGestureUnavailableCircleTest, aStoredCircleIsShownAsNotAvailableAndLeftAlone) {}
+
+/// Saving the dialog stores every control, and leaves the slots the dialog does not offer alone.
 class SettingsDialogGestureSaveTest: public GtkTest {
     void runTest(GtkApplication* app) override {
-        SettingsDialogCase dialogCase(
-                app, [](Settings* settings) { settings->setGestureSettings(GestureSettings::defaults()); });
+        SettingsDialogCase dialogCase(app, [](Settings* settings) {
+            GestureSettings gesture = GestureSettings::defaults();
+            // A stored value this page cannot offer: it must survive a save untouched.
+            gesture.circleToSelectEnabled = true;
+            settings->setGestureSettings(gesture);
+        });
         ASSERT_FALSE(dialogCase.settings()->getGestureSettings().tapUndoRedoEnabled)
                 << "the touch tap slot is off and this page does not offer it";
+        ASSERT_TRUE(dialogCase.settings()->getGestureSettings().circleToSelectEnabled)
+                << "the stored circle slot is on and this page cannot offer it";
         ASSERT_NE(dialogCase.checkbox(SCRIBBLE_TOGGLE), nullptr);
         ASSERT_NE(dialogCase.checkbox(QUICK_PALETTE_TOGGLE), nullptr);
         ASSERT_NE(dialogCase.checkbox(FEEDBACK_TOGGLE), nullptr);
@@ -289,7 +341,8 @@ class SettingsDialogGestureSaveTest: public GtkTest {
         EXPECT_TRUE(stored.quickPaletteEnabled);
         EXPECT_FALSE(stored.feedbackEnabled);
         EXPECT_NEAR(stored.scribbleConfidenceFloor, 0.75, 1e-9);
-        EXPECT_FALSE(stored.circleToSelectEnabled) << "a control that was left alone is stored as it was shown";
+        EXPECT_TRUE(stored.circleToSelectEnabled)
+                << "the stored circle slot is left exactly as it was, not written from an inert control";
         EXPECT_FALSE(stored.tapUndoRedoEnabled) << "and the slot this page does not offer is untouched";
         EXPECT_EQ(dialogCase.callbacks, 1) << "and the caller is told the settings were accepted";
     }
@@ -302,27 +355,32 @@ class SettingsDialogGestureResetTest: public GtkTest {
     void runTest(GtkApplication* app) override {
         SettingsDialogCase dialogCase(app, [](Settings* settings) {
             GestureSettings gesture = settings->getGestureSettings();
-            gesture.circleToSelectEnabled = true;
+            gesture.circleToSelectEnabled = true;  // stored, and not this page's to change
             gesture.scribbleToEraseEnabled = true;
-            gesture.circleConfidenceFloor = 0.9;
+            gesture.scribbleConfidenceFloor = 0.9;
             settings->setGestureSettings(gesture);
         });
         ASSERT_NE(dialogCase.checkbox(CIRCLE_TOGGLE), nullptr);
         ASSERT_NE(dialogCase.checkbox(SCRIBBLE_TOGGLE), nullptr);
-        ASSERT_NE(dialogCase.spin(CIRCLE_CONFIDENCE), nullptr);
+        ASSERT_NE(dialogCase.spin(SCRIBBLE_CONFIDENCE), nullptr);
         ASSERT_NE(dialogCase.widget(RESET), nullptr);
-        ASSERT_TRUE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)));
+        ASSERT_TRUE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE)))
+                << "the profile turns the scribble on";
+        ASSERT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)))
+                << "the circle cannot be carried out, so the page never shows it on";
 
         gtk_button_clicked(GTK_BUTTON(dialogCase.widget(RESET)));
 
-        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(CIRCLE_TOGGLE)))
-                << "the circle goes back to off, the conservative default";
-        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE))) << "so does the scribble";
-        EXPECT_NEAR(gtk_spin_button_get_value(dialogCase.spin(CIRCLE_CONFIDENCE)),
-                    GestureSettings::defaults().circleConfidenceFloor, 1e-9);
-        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_CONFIDENCE)))
+        EXPECT_FALSE(gtk_check_button_get_active(dialogCase.checkbox(SCRIBBLE_TOGGLE)))
+                << "the scribble goes back to off, the conservative default";
+        EXPECT_NEAR(gtk_spin_button_get_value(dialogCase.spin(SCRIBBLE_CONFIDENCE)),
+                    GestureSettings::defaults().scribbleConfidenceFloor, 1e-9);
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(SCRIBBLE_CONFIDENCE)))
                 << "and its sensitivity is inert again";
+        EXPECT_FALSE(gtk_widget_get_sensitive(dialogCase.widget(CIRCLE_TOGGLE)));
         EXPECT_TRUE(dialogCase.settings()->getGestureSettings().circleToSelectEnabled)
+                << "the stored circle slot is not this page's to change, and nothing is stored yet anyway";
+        EXPECT_TRUE(dialogCase.settings()->getGestureSettings().scribbleToEraseEnabled)
                 << "nothing is stored until the dialog is saved";
 
         GtkWidget* ok = dialogCase.ok();
@@ -330,9 +388,10 @@ class SettingsDialogGestureResetTest: public GtkTest {
         gtk_button_clicked(GTK_BUTTON(ok));
 
         const GestureSettings& stored = dialogCase.settings()->getGestureSettings();
-        EXPECT_FALSE(stored.circleToSelectEnabled) << "saving after a reset stores the defaults";
-        EXPECT_FALSE(stored.scribbleToEraseEnabled);
-        EXPECT_NEAR(stored.circleConfidenceFloor, GestureSettings::defaults().circleConfidenceFloor, 1e-9);
+        EXPECT_FALSE(stored.scribbleToEraseEnabled) << "saving after a reset stores the defaults";
+        EXPECT_NEAR(stored.scribbleConfidenceFloor, GestureSettings::defaults().scribbleConfidenceFloor, 1e-9);
+        EXPECT_TRUE(stored.circleToSelectEnabled)
+                << "and the stored slot this page cannot offer is left exactly as it was";
     }
 };
 TEST_F(SettingsDialogGestureResetTest, theResetButtonGoesBackToTheDefaultsWithoutStoringThem) {}
@@ -344,11 +403,8 @@ TEST_F(SettingsDialogGestureResetTest, theResetButtonGoesBackToTheDefaultsWithou
  */
 class SettingsDialogGestureReferenceTest: public GtkTest {
     void runTest(GtkApplication* app) override {
-        SettingsDialogCase dialogCase(app, [](Settings* settings) {
-            GestureSettings gesture = GestureSettings::defaults();
-            gesture.circleToSelectEnabled = true;  // one of the two is on, so both states are readable
-            settings->setGestureSettings(gesture);
-        });
+        SettingsDialogCase dialogCase(
+                app, [](Settings* settings) { settings->setGestureSettings(GestureSettings::defaults()); });
 
         ASSERT_NE(dialogCase.widget("gestureReferenceList"), nullptr) << "the page has a reference";
         ASSERT_NE(dialogCase.widget("gestureReferenceRow-circle"), nullptr) << "the circle has a line";
@@ -359,15 +415,22 @@ class SettingsDialogGestureReferenceTest: public GtkTest {
             return label == nullptr ? std::string{} : std::string(gtk_label_get_text(GTK_LABEL(label)));
         };
 
-        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "On") << "the reference reads what the profile holds";
+        /*
+         * Plan 008, step 4 hit its stop condition: the circle is recognised and then always left as
+         * ink, so the reference must not report a stored "On" for a selection that never happens. It
+         * says the gesture is not available yet.
+         */
+        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "Not available yet")
+                << "the circle cannot be carried out, so the reference does not promise it";
         EXPECT_EQ(stateOf("gestureReferenceState-scribble"), "Off") << "a gesture nobody can reach says so";
 
-        // Live: turning the gesture off on the page turns its line off too, without a save.
-        gtk_check_button_set_active(dialogCase.checkbox(CIRCLE_TOGGLE), false);
+        // Live: turning a gesture on on the page turns its line on too, without a save.
+        gtk_check_button_set_active(dialogCase.checkbox(SCRIBBLE_TOGGLE), true);
         settle();
 
-        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "Off") << "the reference follows the controls";
-        EXPECT_EQ(stateOf("gestureReferenceState-scribble"), "Off");
+        EXPECT_EQ(stateOf("gestureReferenceState-scribble"), "On") << "the reference follows the controls";
+        EXPECT_EQ(stateOf("gestureReferenceState-circle"), "Not available yet")
+                << "and the circle says what it is however the page changes";
     }
 };
 TEST_F(SettingsDialogGestureReferenceTest, theReferenceSaysWhatTheLiveSettingsSay) {}

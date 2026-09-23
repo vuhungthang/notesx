@@ -6832,10 +6832,11 @@ If available select &lt;small&gt;&lt;tt&gt;pulse&lt;/tt&gt;&lt;/small&gt; as inp
                                 </child>
                                 <child>
                                   <object class="GtkCheckButton" id="cbGestureCircleToSelect">
-                                    <property name="label" translatable="yes">Circle to select</property>
+                                    <property name="label" translatable="yes">Circle to select (not available yet)</property>
                                     <property name="visible">True</property>
-                                    <property name="can-focus">True</property>
-                                    <property name="tooltip-text" translatable="yes">A circle drawn around elements selects what it encloses, as one undoable step. The circle is not left as ink. Off by default: turning it on has not been validated against ordinary handwriting.</property>
+                                    <property name="sensitive">False</property>
+                                    <property name="can-focus">False</property>
+                                    <property name="tooltip-text" translatable="yes">Not available yet. A circle drawn around elements is recognised, but a selection cannot yet be undone in a single step, so the circle is always left as ordinary ink. This cannot be switched on.</property>
                                   </object>
                                   <packing>
                                     <property name="left-attach">0</property>
@@ -6845,9 +6846,9 @@ If available select &lt;small&gt;&lt;tt&gt;pulse&lt;/tt&gt;&lt;/small&gt; as inp
                                 <child>
                                   <object class="GtkSpinButton" id="spGestureCircleConfidence">
                                     <property name="visible">True</property>
-                                    <property name="can-focus">True</property>
+                                    <property name="can-focus">False</property>
                                     <property name="sensitive">False</property>
-                                    <property name="tooltip-text" translatable="yes">How sure the circle must be before it is acted on, from 0 to 1. It can only make the gesture harder to trigger, never easier.</property>
+                                    <property name="tooltip-text" translatable="yes">Inert: circle-to-select is not available yet, so there is nothing for this to make harder to trigger.</property>
                                     <property name="adjustment">adjustmentGestureCircleConfidence</property>
                                     <property name="digits">2</property>
                                     <property name="numeric">True</property>
@@ -6863,7 +6864,7 @@ If available select &lt;small&gt;&lt;tt&gt;pulse&lt;/tt&gt;&lt;/small&gt; as inp
                                     <property name="can-focus">False</property>
                                     <property name="xalign">0</property>
                                     <property name="use-markup">True</property>
-                                    <property name="label" translatable="yes">&lt;i&gt;Example: draw one closed loop around two strokes, lifting the pen in between only if you must. You see the candidate first; nothing is selected until you confirm it.&lt;/i&gt;</property>
+                                    <property name="label" translatable="yes">&lt;i&gt;Not available yet: a closed loop drawn around what you want to select is recognised, but a selection cannot yet be undone in a single step, so it always stays ordinary ink.&lt;/i&gt;</property>
                                   </object>
                                   <packing>
                                     <property name="left-attach">0</property>

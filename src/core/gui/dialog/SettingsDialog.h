@@ -87,11 +87,13 @@ private:
     /**
      * Plan 008, step 2: the gesture preferences.
      *
-     * The widgets carry a value each and are read back on save. The two confidence fields are only
-     * meaningful for a gesture that is on, so they follow their own toggle rather than sitting
-     * there editable while doing nothing. The reset button puts the widget values back to the
-     * conservative defaults without touching the profile: nothing is stored until the dialog is
-     * saved, exactly as the other pages behave.
+     * The widgets carry a value each and are read back on save. The scribble's confidence field is
+     * only meaningful for a gesture that is on, so it follows its own toggle rather than sitting
+     * there editable while doing nothing. The circle's control and its confidence field are inert:
+     * this build recognises the circle and leaves it as ink (step 4 stop condition), so the page
+     * must not offer to switch it on, and saving leaves the stored circle slot untouched. The reset
+     * button puts the widget values back to the conservative defaults without touching the profile:
+     * nothing is stored until the dialog is saved, exactly as the other pages behave.
      */
     void showGestureSettings(const xoj::gesture::GestureSettings& gesture);
     void loadGestureSettings();
