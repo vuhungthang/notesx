@@ -26,7 +26,7 @@
 
 #include "util/PathUtil.h"             // for getLocalePath
 #include "util/PlaceholderString.h"    // for PlaceholderString
-#include "util/XojPreviewExtractor.h"  // for XojPreviewExtractor, PREVIEW_R...
+#include "util/PreviewExtraction.h"    // for extractPreview, PreviewResult
 #include "util/i18n.h"                 // for _F, _
 
 #include "config.h"      // for GETTEXT_PACKAGE, ENABLE_NLS
@@ -122,42 +122,46 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    XojPreviewExtractor extractor;
-    PreviewExtractResult result = extractor.readFile(argv[1]);
+    /*
+     * Plan 006: the reading is shared with the application's thumbnail service - this program keeps
+     * only what makes a thumbnail a *desktop* thumbnail, i.e. the icon it stamps onto the preview
+     * and the file it writes. The exit codes are the ones the .thumbnailer spec was written
+     * against, so sharing the code does not change what the desktop sees.
+     */
+    xoj::preview::PreviewResult result = xoj::preview::extractPreview(argv[1]);
 
-    switch (result) {
-        case PREVIEW_RESULT_IMAGE_READ:
+    switch (result.status) {
+        case xoj::preview::PreviewStatus::Extracted:
             // continue to write preview
             break;
 
-        case PREVIEW_RESULT_BAD_FILE_EXTENSION:
+        case xoj::preview::PreviewStatus::Unsupported:
             logMessage((_F("xoj-preview-extractor: file \"{1}\" is not .xoj file") % argv[1]).str(), true);
             return 2;
 
-        case PREVIEW_RESULT_COULD_NOT_OPEN_FILE:
+        case xoj::preview::PreviewStatus::Unreadable:
             logMessage((_F("xoj-preview-extractor: opening input file \"{1}\" failed") % argv[1]).str(), true);
             return 3;
 
-        case PREVIEW_RESULT_NO_PREVIEW:
+        case xoj::preview::PreviewStatus::NoPreview:
             logMessage((_F("xoj-preview-extractor: file \"{1}\" contains no preview") % argv[1]).str(), true);
             return 4;
 
-        case PREVIEW_RESULT_ERROR_READING_PREVIEW:
+        case xoj::preview::PreviewStatus::Corrupt:
         default:
             logMessage(_("xoj-preview-extractor: no preview and page found, maybe an invalid file?"), true);
             return 5;
     }
 
-
-    gsize dataLen = 0;
-    unsigned char* imageData = extractor.getData(dataLen);
+    const gsize dataLen = static_cast<gsize>(result.data.size());
+    const unsigned char* imageData = result.data.data();
 
     // The following code is for rendering the Xournal++ icon on top of thumbnails.
 
     // Struct for reading imageData into a cairo surface
     struct ReadClosure {
         unsigned int pos;
-        unsigned char* data;
+        const unsigned char* data;
         gsize maxLen;
     };
     cairo_read_func_t processRead =
