@@ -238,6 +238,16 @@ void CommandRegistry::addFromToolItems(const std::vector<std::unique_ptr<Abstrac
 
 void CommandRegistry::addCommand(CommandEntry entry) { this->appendCommand(std::move(entry)); }
 
+auto CommandRegistry::acceleratorFor(const std::string& detailedActionName) const -> std::string {
+    if (!this->acceleratorLookup) {
+        return std::string();
+    }
+    for (const std::string& accelerator: this->acceleratorLookup(detailedActionName)) {
+        return formatAcceleratorForDisplay(accelerator);
+    }
+    return std::string();
+}
+
 auto CommandRegistry::commandKey(const CommandEntry& entry) -> std::string {
     std::string key = entry.scope == ActionScope::APPLICATION ? APPLICATION_NAMESPACE : WINDOW_NAMESPACE;
     key += entry.action;

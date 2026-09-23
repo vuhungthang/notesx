@@ -705,6 +705,37 @@ void Control::showShortcutReference() {
     this->win->showShortcutReference();
 }
 
+void Control::showQuickPalette() {
+    xoj_assert(this->win != nullptr);
+
+    // Nothing to summon when the user has not bound the palette: the preference records the
+    // binding, and an unbound palette is not reachable by a key any more than by a button.
+    if (!xoj::gui::quickPaletteAvailable(this->getSettings()->getGestureSettings())) {
+        return;
+    }
+
+    GtkWidget* mainBox = this->getWindow()->get("mainBox");
+    gint x = gtk_widget_get_allocated_width(mainBox) / 2;
+    gint y = gtk_widget_get_allocated_height(mainBox) / 2;
+
+    // A keyboard summon has no stylus point, so it goes where the pointer is; with no pointer over
+    // the window, the centre of the view is the sensible place.
+    if (GdkWindow* window = gtk_widget_get_window(mainBox); window != nullptr) {
+        GdkDisplay* display = gtk_widget_get_display(mainBox);
+        GdkSeat* seat = display != nullptr ? gdk_display_get_default_seat(display) : nullptr;
+        GdkDevice* pointer = seat != nullptr ? gdk_seat_get_pointer(seat) : nullptr;
+        if (pointer != nullptr) {
+            gint px = 0;
+            gint py = 0;
+            gdk_window_get_device_position(window, pointer, &px, &py, nullptr);
+            x = px;
+            y = py;
+        }
+    }
+
+    this->getWindow()->showQuickPaletteAt(x, y);
+}
+
 void Control::setToolDrawingType(DrawingType type) {
     if (this->toolHandler->getDrawingType() != type) {
 

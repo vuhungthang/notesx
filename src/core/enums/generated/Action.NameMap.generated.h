@@ -123,4 +123,5 @@ constexpr const char* ACTION_NAMES[] = {  // Action to string conversion map
         "layer-active",
         "position-highlighting",
         "command-palette",
-        "shortcut-reference"};
+        "shortcut-reference",
+        "quick-palette"};

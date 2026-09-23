@@ -26,6 +26,7 @@
 #include "gui/GladeSearchpath.h"               // for GladeSearchpath
 #include "gui/MainWindow.h"                    // for MainWindow
 #include "gui/QuickPalette.h"                  // for QuickPalette, QuickPaletteButton
+#include "gui/ShortcutReference.h"             // for ShortcutReference (Plan 008, step 1)
 #include "model/PageRef.h"                     // for PageRef
 #include "model/XojPage.h"                     // for XojPage
 
@@ -221,11 +222,75 @@ void theClassicToolboxIsWhatAppearsWhenThePaletteIsNotBound(QuickPaletteGtkFixtu
 
 }  // namespace
 
+/// Plan 008, step 1: the palette is reachable from the keyboard when it is bound.
+void theKeyboardSummonsThePaletteWhenItIsBound(QuickPaletteGtkFixture& test) {
+    test.enablePalette(true);
+    QuickPalette* palette = test.win->getQuickPalette();
+    ASSERT_NE(palette, nullptr);
+
+    test.control->showQuickPalette();
+    settle();
+
+    EXPECT_TRUE(palette->isShown()) << "the keyboard binding summons it";
+    palette->cancel();
+    settle();
+}
+
+/// And an unbound palette is not reachable by a key any more than by a button.
+void theKeyboardDoesNothingWhenThePaletteIsNotBound(QuickPaletteGtkFixture& test) {
+    test.enablePalette(false);
+    QuickPalette* palette = test.win->getQuickPalette();
+    ASSERT_NE(palette, nullptr);
+
+    test.control->showQuickPalette();
+    settle();
+
+    EXPECT_FALSE(palette->isShown()) << "it is only reachable where the user bound it";
+}
+
+/// The keyboard command carries metadata and keys, from the live accelerator source.
+void thePaletteCommandIsInTheReferenceWithItsKeys(QuickPaletteGtkFixture& test) {
+    xoj::gui::ShortcutReference* reference = test.win->getShortcutReference();
+    ASSERT_NE(reference, nullptr);
+
+    reference->open();
+    settle();
+
+    const std::vector<std::string> covered = reference->coveredIds();
+    EXPECT_NE(std::find(covered.begin(), covered.end(), std::string("win.quick-palette")), covered.end())
+            << "the command is in the reference because it is an action with metadata";
+    EXPECT_EQ(reference->acceleratorOf("win.quick-palette"), "Ctrl+Shift+M");
+    EXPECT_FALSE(reference->isConflicted("win.quick-palette")) << "its keys are its own";
+
+    reference->close();
+    settle();
+
+    /*
+     * The keys in the reference are the live ones the application holds, not a copy: remapping the
+     * action moves them, exactly as remapping a menu command does. If the accelerator had been
+     * written into the command instead of read from the application, this would still read the old
+     * keys.
+     */
+    GtkApplication* app = GTK_APPLICATION(gtk_window_get_application(GTK_WINDOW(test.win->getWindow())));
+    ASSERT_NE(app, nullptr);
+    const char* remapped[] = {"<Control><Shift>n", nullptr};
+    gtk_application_set_accels_for_action(app, "win.quick-palette", remapped);
+
+    reference->open();
+    settle();
+    EXPECT_EQ(reference->acceleratorOf("win.quick-palette"), "Ctrl+Shift+N") << "the reference reads the live keys";
+    reference->close();
+    settle();
+}
+
 INSTANTIATE_TEST_SUITE_P(QuickPalette, QuickPaletteGtkFixture,
                          ::testing::Values(&showsWhereItWasSummonedWithoutCoveringThePenPoint,
                                            &everyPlaceItOffersSaysWhatItIs, &cancellingChangesNothingAboutTheTool,
                                            &theEraserButtonIsTheEraser,
-                                           &theClassicToolboxIsWhatAppearsWhenThePaletteIsNotBound));
+                                           &theClassicToolboxIsWhatAppearsWhenThePaletteIsNotBound,
+                                           &theKeyboardSummonsThePaletteWhenItIsBound,
+                                           &theKeyboardDoesNothingWhenThePaletteIsNotBound,
+                                           &thePaletteCommandIsInTheReferenceWithItsKeys));
 
 /// The scenario runs inside the fixture's runTest, where the application is up.
 TEST_P(QuickPaletteGtkFixture, theScenario) {}

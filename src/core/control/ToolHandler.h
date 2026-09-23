@@ -412,6 +412,15 @@ public:
     [[maybe_unused]] std::array<std::unique_ptr<Tool>, TOOL_COUNT> const& getTools() const;
 
     /**
+     * Plan 008, step 1: the tool the user was on before the current one, or TOOL_NONE.
+     *
+     * The quick palette offers to go back to it. It is recorded when the effective active tool
+     * changes to a different tool, and never remembers TOOL_NONE or the current tool, so the
+     * palette's previous-tool slot is only ever a tool the user can actually return to.
+     */
+    auto getPreviousToolType() const -> ToolType;
+
+    /**
      * Change the selection tools capabilities, depending on the selected elements
      */
     void setSelectionEditTools(bool setColor, bool setSize, bool setFill, bool setLineStyle);
@@ -473,6 +482,15 @@ private:
     void emitToolLineStyleChanged() const;
 
     /**
+     * Plan 008, step 1: remember the tool the user is leaving, for the quick palette.
+     *
+     * A plain record, called before the active tool changes: it only writes a field, calls nothing,
+     * and cannot loop. It never records TOOL_NONE (nothing to go back to) nor the tool being
+     * selected (no change to remember).
+     */
+    void rememberToolChange(ToolType nextType);
+
+    /**
      * @brief Get the Button Tool pointer based on enum
      *
      * @param button
@@ -493,6 +511,9 @@ private:
 
     // tool which is selected in the toolbar
     Tool* toolbarSelectedTool = nullptr;
+
+    /// Plan 008, step 1: the tool the active tool was before its current one; TOOL_NONE at start.
+    ToolType previousToolType = TOOL_NONE;
 
     // tools set for the different Buttons
     std::unique_ptr<Tool> stylusButton1Tool;

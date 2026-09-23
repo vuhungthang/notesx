@@ -181,6 +181,8 @@ enum class Action : size_t {
     COMMAND_PALETTE,
     /// Plan 007, step 5: what the application can do, and the keys it is on.
     SHORTCUT_REFERENCE,
+    /// Plan 008, step 1: summon the quick palette from the keyboard, when the user has bound it.
+    QUICK_PALETTE,
 
     // Keep this last value
     ENUMERATOR_COUNT

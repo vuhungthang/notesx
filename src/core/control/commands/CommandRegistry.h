@@ -89,6 +89,17 @@ public:
     /// The extension point: a command that is not offered by a menu.
     void addCommand(CommandEntry entry);
 
+    /**
+     * The accelerator the application currently holds for an action, as the reference displays it,
+     * or an empty string when it holds none.
+     *
+     * A command that came from a menu or a tool item has its accelerator filled in as it is read;
+     * a command added directly has to ask. It asks the same live lookup - what GTK holds for the
+     * action right now - so a directly added command is remappable and shown exactly like one from
+     * a menu, and the answer is never a copy baked into the command.
+     */
+    auto acceleratorFor(const std::string& detailedActionName) const -> std::string;
+
     const std::vector<CommandEntry>& all() const;
     /// The metadata of every command, for the search and the reference.
     auto metadata() const -> std::vector<CommandMetadata>;

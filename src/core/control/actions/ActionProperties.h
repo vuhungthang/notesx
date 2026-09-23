@@ -1022,6 +1022,21 @@ struct ActionProperties<Action::SHORTCUT_REFERENCE> {
     static constexpr const char* keywords[] = {"shortcuts", "keys", "accelerators", "reference", nullptr};
 };
 
+/**
+ * Plan 008, step 1: summoning the quick palette from the keyboard.
+ *
+ * The plan requires the palette to be reachable by a keyboard shortcut as well as by the stylus
+ * binding. It goes through the ordinary action database, so it is remappable the way every other
+ * action is and it appears in the shortcut reference with its keys; a keyboard summon has no stylus
+ * point, so Control::showQuickPalette() places it at the pointer.
+ */
+template <>
+struct ActionProperties<Action::QUICK_PALETTE> {
+    static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showQuickPalette(); }
+    static constexpr const char* accelerators[] = {"<Ctrl><Shift>M", nullptr};
+    static constexpr const char* keywords[] = {"quick", "palette", "gesture", "favorites", nullptr};
+};
+
 template <>
 struct ActionProperties<Action::DEMO> {
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showGtkDemo(); }

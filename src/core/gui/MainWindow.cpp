@@ -245,6 +245,32 @@ auto MainWindow::buildCommandRegistry() const -> xoj::command::CommandRegistry {
 
     commands.addFromMenuModel(this->getMenuModel());
     commands.addFromToolItems(this->getToolMenuHandler()->getToolItems());
+
+    /*
+     * Plan 008, step 1: summoning the quick palette from the keyboard.
+     *
+     * It is not in a menu - it is a keyboard binding on a surface the stylus also summons - so it
+     * is added through the registry's own extension point, the same door the shortcut reference
+     * uses. It carries its action so the palette and the reference can show its keys and run it
+     * through the action database, exactly as a menu entry would.
+     */
+    {
+        using xoj::command::ActionScope;
+        CommandEntry quickPalette;
+        quickPalette.metadata.actionName = std::string("win.") + Action_toString(Action::QUICK_PALETTE);
+        quickPalette.metadata.id = quickPalette.metadata.actionName;
+        quickPalette.metadata.title = _("Quick palette");
+        quickPalette.metadata.category = _("View");
+        quickPalette.metadata.keywords = {"quick", "palette", "gesture", "favorites"};
+        quickPalette.scope = ActionScope::WINDOW;
+        quickPalette.action = Action_toString(Action::QUICK_PALETTE);
+        quickPalette.knownAction = Action::QUICK_PALETTE;
+        // Its keys come from the live accelerators the application holds, the same source a menu
+        // entry's do, so the reference shows what GTK would actually answer to and follows a remap.
+        quickPalette.metadata.accelerator = commands.acceleratorFor(quickPalette.metadata.actionName);
+        commands.addCommand(std::move(quickPalette));
+    }
+
     return commands;
 }
 
@@ -1383,9 +1409,10 @@ auto MainWindow::buildQuickPaletteButtons() -> std::vector<xoj::gui::QuickPalett
 
     xoj::gui::QuickPaletteSlotsInput input;
     input.currentTool = handler != nullptr ? handler->getToolType() : TOOL_NONE;
-    // This tree keeps no record of the tool the user had before this one, so there is nothing to
-    // offer to go back to; the slot exists and is tested, the source does not exist here yet.
-    input.previousTool = TOOL_NONE;
+    // Plan 008, step 1: the tool the user was on before this one, so the palette can offer to go
+    // back. ToolHandler records it as the active tool changes; with none recorded the slot is
+    // simply absent.
+    input.previousTool = handler != nullptr ? handler->getPreviousToolType() : TOOL_NONE;
     input.favorites = settings != nullptr ? &settings->getToolPresets() : nullptr;
 
     std::vector<xoj::gui::QuickPaletteButton> buttons;

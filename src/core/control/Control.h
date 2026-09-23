@@ -35,12 +35,12 @@
 #include "model/PageSelectionModel.h"               // for PageSelectionModel
 #include "undo/UndoRedoHandler.h"                   // for UndoRedoHandler (ptr only)
 
-#include "ClipboardHandler.h"           // for ClipboardListener
-#include "DocumentSafetyState.h"        // for DocumentSafetyState
-#include "RecoveryInventory.h"          // for RecoveryCandidate
-#include "ToolConfigAdapter.h"          // for ToolConfigAdapter
-#include "ToolHandler.h"                // for ToolListener
-#include "filesystem.h"                 // for path
+#include "ClipboardHandler.h"     // for ClipboardListener
+#include "DocumentSafetyState.h"  // for DocumentSafetyState
+#include "RecoveryInventory.h"    // for RecoveryCandidate
+#include "ToolConfigAdapter.h"    // for ToolConfigAdapter
+#include "ToolHandler.h"          // for ToolListener
+#include "filesystem.h"           // for path
 
 class LoadHandler;
 class GeometryToolController;
@@ -187,7 +187,7 @@ public:
     void selectTool(ToolType type);
     void selectDefaultTool();
 
-    void fontChanged(const XojFont& font);      ///< Set the font after the user selected a font
+    void fontChanged(const XojFont& font);  ///< Set the font after the user selected a font
 
     void updatePageNumbers(size_t page, size_t pdfPage);
 
@@ -216,6 +216,15 @@ public:
 
     /// Plan 007, step 5: the shortcut reference - what the application can do and what it is on.
     void showShortcutReference();
+
+    /**
+     * Plan 008, step 1: summon the quick palette from the keyboard.
+     *
+     * A no-op when the user has not bound the palette - the gesture preferences say it is off -
+     * because the palette is only reachable where the user asked for it. It is placed at the
+     * pointer, and at the centre of the view when the pointer is not over the window.
+     */
+    void showQuickPalette();
     void setFullscreen(bool enabled);
     void setShowSidebar(bool enabled);
     void setShowToolbar(bool enabled);

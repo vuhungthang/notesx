@@ -263,11 +263,21 @@ void ToolHandler::selectTool(ToolType type) {
         g_warning("unknown tool selected: %i\n", type);
         return;
     }
+    this->rememberToolChange(type);
     this->toolbarSelectedTool = &getTool(type);
     // set activeTool is necessary for fireToolChanged()
     // if called after this method
     // to result in the correct Button shown as active
     this->activeTool = this->toolbarSelectedTool;
+}
+
+auto ToolHandler::getPreviousToolType() const -> ToolType { return this->previousToolType; }
+
+void ToolHandler::rememberToolChange(ToolType nextType) {
+    const ToolType current = this->activeTool != nullptr ? this->activeTool->type : TOOL_NONE;
+    if (current != TOOL_NONE && current != nextType) {
+        this->previousToolType = current;
+    }
 }
 
 void ToolHandler::fireToolChanged() const {
@@ -672,6 +682,7 @@ bool ToolHandler::pointActiveToolToButtonTool(Button button) {
     if (!tool || this->activeTool == tool) {
         return false;
     }
+    this->rememberToolChange(tool->type);
     this->activeTool = tool;
     return true;
 }
@@ -680,6 +691,7 @@ bool ToolHandler::pointActiveToolToToolType(ToolType type) {
     if (this->activeTool->type == type) {
         return false;
     }
+    this->rememberToolChange(type);
     this->activeTool = &getTool(type);
     return true;
 }
@@ -687,6 +699,7 @@ bool ToolHandler::pointActiveToolToToolType(ToolType type) {
 bool ToolHandler::pointActiveToolToToolbarTool() {
     if (this->activeTool == this->toolbarSelectedTool)
         return false;
+    this->rememberToolChange(this->toolbarSelectedTool->type);
     this->activeTool = this->toolbarSelectedTool;
     return true;
 }
