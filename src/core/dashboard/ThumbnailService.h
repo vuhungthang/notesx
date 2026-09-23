@@ -20,26 +20,26 @@
 
 #pragma once
 
-#include <atomic>    // for atomic_bool
+#include <atomic>              // for atomic_bool
 #include <condition_variable>  // for condition_variable
-#include <cstddef>   // for size_t
-#include <cstdint>   // for uint8_t, uint64_t
-#include <deque>     // for deque
-#include <functional>  // for function
-#include <map>       // for map
-#include <memory>    // for shared_ptr
-#include <mutex>     // for mutex
-#include <string>    // for string
-#include <thread>    // for thread
-#include <vector>    // for vector
+#include <cstddef>             // for size_t
+#include <cstdint>             // for uint8_t, uint64_t
+#include <deque>               // for deque
+#include <functional>          // for function
+#include <map>                 // for map
+#include <memory>              // for shared_ptr
+#include <mutex>               // for mutex
+#include <string>              // for string
+#include <thread>              // for thread
+#include <vector>              // for vector
 
 #include <glib.h>  // for GMainContext
 
-#include "DashboardTypes.h"  // for DocumentCard
-#include "ThumbnailCache.h"  // for ThumbnailCache
 #include "util/PreviewExtraction.h"  // for PreviewStatus
 
-#include "filesystem.h"  // for path
+#include "DashboardTypes.h"  // for DocumentCard
+#include "ThumbnailCache.h"  // for ThumbnailCache
+#include "filesystem.h"      // for path
 
 namespace xoj::dashboard {
 
@@ -96,6 +96,14 @@ public:
 
     /// Forget every outstanding request. Called when the dashboard goes away.
     void cancelAll();
+
+    /**
+     * The preview that has already been read for the file's current version, empty when there is
+     * none. A card that knows a preview exists can show it without asking for it again, and the
+     * caller finds out whether the bytes are usable - whether they are an image at all - for
+     * itself.
+     */
+    auto cachedPreview(const fs::path& path) const -> std::vector<std::uint8_t>;
 
     /// How many requests have been accepted and not finished. For tests and for the UI to report.
     auto pendingCount() const -> std::size_t;

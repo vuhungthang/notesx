@@ -574,3 +574,143 @@ image.flying-icon.TL {
 image.flying-icon.TR {
     border-radius: 50% 50% 50% 0%;
 }
+
+/* Home: the file-backed dashboard. Plan 006.
+ *
+ * The dashboard is a page of cards over the files the user already has, so its styling is about
+ * making one card legible at a time: the preview carries the recognition, the name and the file's
+ * state carry the rest. Nothing here depends on colour alone - a card's state is also its text. */
+
+.xoj-dashboard {
+    background-color: @theme_bg_color;
+}
+
+.xoj-dashboard-header {
+    margin-bottom: 6px;
+}
+
+label.xoj-dashboard-title {
+    font-size: 1.7em;
+    font-weight: bold;
+}
+
+label.xoj-dashboard-document {
+    opacity: 0.7;
+}
+
+.xoj-dashboard-section {
+    margin-top: 6px;
+}
+
+label.xoj-dashboard-section-title {
+    font-size: 1.15em;
+    font-weight: bold;
+    opacity: 0.9;
+}
+
+label.xoj-dashboard-section-hint {
+    opacity: 0.6;
+    font-style: italic;
+}
+
+/* A card: a preview and three lines, sized so a row of them still reads at a glance. */
+.xoj-dashboard-card {
+    padding: 6px;
+    border-radius: 8px;
+    background-color: alpha(@theme_fg_color, 0.04);
+}
+
+.xoj-dashboard-card:hover {
+    background-color: alpha(@theme_fg_color, 0.08);
+}
+
+.xoj-dashboard-card-pinned {
+    background-color: alpha(@theme_selected_bg_color, 0.12);
+}
+
+.xoj-dashboard-card button.xoj-dashboard-card-open {
+    padding: 2px;
+    border: none;
+    background: none;
+    box-shadow: none;
+}
+
+image.xoj-dashboard-card-preview {
+    background-color: alpha(@theme_fg_color, 0.06);
+    border-radius: 4px;
+    padding: 4px;
+    opacity: 0.75;
+}
+
+image.xoj-dashboard-preview-none,
+image.xoj-dashboard-preview-pending {
+    opacity: 0.35;
+}
+
+image.xoj-dashboard-preview-corrupt {
+    opacity: 0.9;
+    color: @warning_color;
+}
+
+.xoj-dashboard-card-unavailable image.xoj-dashboard-card-preview {
+    opacity: 0.25;
+}
+
+label.xoj-dashboard-card-title {
+    font-weight: bold;
+}
+
+label.xoj-dashboard-card-metadata {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* A state the user has to act on is not whispered: it is the card's reason for being unopenable. */
+label.xoj-dashboard-card-state {
+    color: @warning_color;
+    opacity: 1.0;
+}
+
+.xoj-dashboard-card .xoj-dashboard-card-actions button {
+    padding: 1px 6px;
+    min-height: 0px;
+    min-width: 0px;
+}
+
+/* The folders the user listed: the row is a control, not a card, because it is about a place. */
+.xoj-dashboard-folder {
+    padding: 4px 6px;
+    border-radius: 6px;
+    background-color: alpha(@theme_fg_color, 0.04);
+}
+
+label.xoj-dashboard-folder-name {
+    font-weight: bold;
+}
+
+label.xoj-dashboard-folder-state {
+    color: @warning_color;
+}
+
+.xoj-dashboard-recovery-card {
+    padding: 8px;
+    border-radius: 8px;
+    background-color: alpha(@warning_color, 0.12);
+}
+
+label.xoj-dashboard-recovery-title {
+    font-weight: bold;
+}
+
+label.xoj-dashboard-recovery-metadata {
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+button.xoj-dashboard-recovery-delete {
+    color: @error_color;
+}
+
+button.xoj-dashboard-template {
+    padding: 8px 14px;
+}

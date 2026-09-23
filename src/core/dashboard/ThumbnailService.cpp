@@ -141,6 +141,10 @@ void ThumbnailService::cancelAll() {
     }
 }
 
+auto ThumbnailService::cachedPreview(const fs::path& path) const -> std::vector<std::uint8_t> {
+    return this->cache->loadImage(path);
+}
+
 auto ThumbnailService::pendingCount() const -> std::size_t {
     const std::lock_guard lock(this->mutex);
     return this->outstanding.size();
