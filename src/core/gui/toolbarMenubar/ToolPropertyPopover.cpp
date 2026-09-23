@@ -1,6 +1,7 @@
 #include "ToolPropertyPopover.h"
 
 #include "control/ToolConfigAdapter.h"  // for ToolConfigAdapter
+#include "gui/TipService.h"             // for TipService (Plan 007)
 #include "util/gtk4_helper.h"           // for gtk_popover_new, gtk_popover_set_child, gtk_widget_add_css_class
 
 ToolPropertyPopoverFactory::ToolPropertyPopoverFactory(ToolConfigAdapter& adapter, Settings& settings,
@@ -17,6 +18,13 @@ auto ToolPropertyPopoverFactory::isActiveTool() const -> bool {
 }
 
 void ToolPropertyPopoverFactory::destroyPanel(gpointer data) { delete static_cast<ToolPropertyPanel*>(data); }
+
+void ToolPropertyPopoverFactory::offerPropertiesTipOnce(GtkWidget* popover, gpointer parentWindow) {
+    xoj::gui::TipService* tips = xoj::gui::TipService::of(GTK_WINDOW(parentWindow));
+    if (tips != nullptr) {
+        tips->offer(xoj::gui::TipService::Tip::ToolProperties, popover);
+    }
+}
 
 auto ToolPropertyPopoverFactory::createPopover() const -> GtkWidget* {
     auto* panel =
@@ -51,5 +59,14 @@ auto ToolPropertyPopoverFactory::createPopover() const -> GtkWidget* {
     // stack).
     g_object_set_data_full(G_OBJECT(popover), "xoj-tool-property-panel", panel, destroyPanel);
     g_signal_connect(popover, "show", G_CALLBACK(ToolPropertyPanel::onPopoverShown), panel);
+
+    /*
+     * Plan 007, step 4: opening a tool's properties is the moment the tip is about, and this is the
+     * one place every tool's properties are built - the toolbar button, the active tool summary and
+     * the popover of a tool that is opened from a menu all come through here. It is connected to
+     * "map" and not to "show", because a tip is anchored to the surface it is about and a widget
+     * that is not on screen yet is nothing to anchor to.
+     */
+    g_signal_connect(popover, "map", G_CALLBACK(offerPropertiesTipOnce), this->parent);
     return popover;
 }

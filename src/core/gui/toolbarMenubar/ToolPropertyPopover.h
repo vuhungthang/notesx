@@ -41,6 +41,13 @@ private:
     /// Free the panel together with the popover that owns it.
     static void destroyPanel(gpointer data);
 
+    /**
+     * Plan 007, step 4: the first time a tool's properties are opened, the user is told once what
+     * this surface is. The handler carries the window the popover belongs to, because the factory
+     * that built the popover can be gone by the time it is shown.
+     */
+    static void offerPropertiesTipOnce(GtkWidget* popover, gpointer parentWindow);
+
     ToolConfigAdapter& adapter;
     Settings& settings;
     ToolPropertyProvider& provider;

@@ -58,6 +58,7 @@ class CommandPalette;
 namespace xoj::gui {
 class WorkspaceGuidance;
 class ShortcutReference;
+class TipService;
 }  // namespace xoj::gui
 
 typedef std::array<xoj::util::WidgetSPtr, TOOLBAR_DEFINITIONS_LEN> ToolbarWidgetArray;
@@ -203,6 +204,15 @@ public:
     /// Plan 007: the reference itself, so a test can read what it shows.
     [[maybe_unused]] auto getShortcutReference() const -> xoj::gui::ShortcutReference*;
 
+    /**
+     * Plan 007, step 4: the tips of this window.
+     *
+     * The service belongs to the window because that is what the widgets a tip is about have in
+     * common: a tool's property popover does not know this object, and the window it is anchored in
+     * is where the service is found from it.
+     */
+    [[maybe_unused]] auto getTipService() const -> xoj::gui::TipService*;
+
     /// Infer the window's DPI from available monitor info and use it to set the default zoom value.
     void setDPI() const;
 
@@ -218,6 +228,8 @@ private:
     void showWorkspaceGuidanceIfFresh();
     /// Plan 007, step 5: the shortcut reference, over the window it describes.
     void buildShortcutReference();
+    /// Plan 007, step 4: the one-time tips, told against whatever they are about.
+    void buildTipService();
     /// Plan 006: the dashboard's model, preview service and page, wired to the application.
     void buildDashboard();
     /// Read what the user has into the model and rebuild the page.
@@ -300,6 +312,9 @@ private:
 
     /// Plan 007, step 5: the shortcut reference, created once with the palette.
     std::unique_ptr<xoj::gui::ShortcutReference> shortcutReference;
+
+    /// Plan 007, step 4: the tips, created once with the palette and owned by the window.
+    std::unique_ptr<xoj::gui::TipService> tipService;
 
     /// Plan 004: the document-safety row, directly under the top toolbars.
     std::unique_ptr<SafetyStatusBar> safetyStatusBar;

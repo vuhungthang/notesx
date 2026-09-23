@@ -28,6 +28,7 @@
 #include "gui/SafetyStatusBar.h"                        // for SafetyStatusBar (Plan 004)
 #include "gui/SearchBar.h"                              // for SearchBar
 #include "gui/ShortcutReference.h"                      // for ShortcutReference (Plan 007)
+#include "gui/TipService.h"                             // for TipService (Plan 007)
 #include "gui/WorkspaceGuidance.h"                      // for WorkspaceGuidance (Plan 007)
 #include "gui/dashboard/DashboardPage.h"                // for DashboardPage
 #include "gui/dashboard/SurfaceStack.h"                 // for SurfaceStack
@@ -205,6 +206,7 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
     buildCommandPalette();
     buildWorkspaceGuidance();
     buildShortcutReference();
+    buildTipService();
 }
 
 auto MainWindow::buildCommandRegistry() const -> xoj::command::CommandRegistry {
@@ -304,6 +306,19 @@ void MainWindow::showShortcutReference() {
 }
 
 auto MainWindow::getShortcutReference() const -> xoj::gui::ShortcutReference* { return this->shortcutReference.get(); }
+
+void MainWindow::buildTipService() {
+    using xoj::gui::TipService;
+
+    /*
+     * The service is built over the window and registered on it, because that is where the widgets a
+     * tip is about find it: the tool property popover knows the window it is anchored in and not
+     * this object. Built here, with the palette, once the window has contents to point at.
+     */
+    this->tipService = std::make_unique<TipService>(GTK_WINDOW(this->getWindow()), this->control->getSettings());
+}
+
+auto MainWindow::getTipService() const -> xoj::gui::TipService* { return this->tipService.get(); }
 
 GMenuModel* MainWindow::getMenuModel() const { return menubar->getModel(); }
 
