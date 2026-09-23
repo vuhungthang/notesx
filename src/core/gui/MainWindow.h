@@ -22,8 +22,13 @@
 #include <glib.h>         // for gpointer, gboolean, gint
 #include <gtk/gtk.h>      // for GtkWidget, GtkCheckMenu...
 
-#include "control/DocumentSafetyState.h"      // for SafetySnapshot
+#include "control/DocumentSafetyState.h"     // for SafetySnapshot
 #include "control/settings/SettingsEnums.h"  // for WorkspaceMode
+#include "dashboard/DashboardModel.h"        // for DashboardModel
+#include "dashboard/DashboardPage.h"         // for DashboardPage
+#include "dashboard/FileWatcher.h"           // for FileWatcher
+#include "dashboard/ThumbnailService.h"      // for ThumbnailService
+#include "gui/dashboard/SurfaceStack.h"      // for SurfaceStack
 #include "util/Point.h"
 #include "util/raii/GObjectSPtr.h"
 
@@ -142,11 +147,56 @@ public:
     void setGtkTouchscreenScrollingForDeviceMapping();
     void setGtkTouchscreenScrollingEnabled(bool enabled);
 
+    /**
+     * Plan 006: show the home surface.
+     *
+     * The dashboard is an index over the files the user has, so showing it re-reads the recent
+     * list, the pins, the folders and the recovery inventory and rebuilds its cards. Switching
+     * between the two surfaces changes which one is visible and nothing else: the editor keeps its
+     * document, its page, its zoom and its unsaved changes because neither surface is created or
+     * destroyed by a switch.
+     */
+    void showHome();
+    /// Go back to the document the editor holds, exactly as it was left.
+    void showEditor();
+    auto isHomeShown() const -> bool;
+    /// Rebuild the dashboard's cards from the files the user has, and ask for the previews it lacks.
+    void refreshDashboard();
+
+    /// Plan 006: the dashboard, so its sections and cards can be looked at without a screen.
+    [[maybe_unused]] auto getDashboardPage() const -> xoj::dashboard::DashboardPage*;
+    /// Plan 006: the stack the editor and the dashboard are the two pages of.
+    [[maybe_unused]] auto getSurfaceStack() const -> GtkWidget*;
+    /// Plan 006: the button that leads from the editor to the dashboard.
+    [[maybe_unused]] auto getHomeButton() const -> GtkWidget*;
+
     /// Infer the window's DPI from available monitor info and use it to set the default zoom value.
     void setDPI() const;
 
 private:
     void initXournalWidget();
+
+    /// Plan 006: the editor and the home surface as two pages of one stack.
+    void buildSurfaceStack();
+    /// Plan 006: the dashboard's model, preview service and page, wired to the application.
+    void buildDashboard();
+    /// Read what the user has into the model and rebuild the page.
+    void loadDashboardSources();
+    /// Ask the user for a file to open, and show the editor once one has been opened.
+    void askForDashboardOpen();
+    /// Ask the user for a folder to list on the dashboard.
+    void askForDashboardFolder();
+
+    /*
+     * Plan 006, step 6: what a recovery card does. Every one of these leaves the document a copy was
+     * recovered from exactly as it is, except for the one path the user themselves chose as the
+     * destination of a save, which is asked about first.
+     */
+    void openRecoveredCopy(const xoj::dashboard::RecoveryCard& card);
+    void saveRecoveredCopyAs(const xoj::dashboard::RecoveryCard& card);
+    void writeRecoveredCopyTo(const xoj::dashboard::RecoveryCard& card, const fs::path& target, bool allowOriginal);
+    void revealRecoveredCopy(const xoj::dashboard::RecoveryCard& card);
+    void deleteRecoveredCopy(const xoj::dashboard::RecoveryCard& card);
 
     void createToolbar();
 
@@ -204,6 +254,20 @@ private:
 
     /// Plan 004: the document-safety row, directly under the top toolbars.
     std::unique_ptr<SafetyStatusBar> safetyStatusBar;
+
+    /*
+     * Plan 006: the home surface. The stack holds the editor widget and the dashboard as its two
+     * pages, the bar under it holds the one button that leads from the editor to the dashboard, and
+     * the model, the watcher, the preview service and the page hold nothing but the paths the user's
+     * own files are reached by.
+     */
+    std::unique_ptr<xoj::dashboard::SurfaceStack> surfaces;
+    /// Plan 006, step 7: the files the dashboard shows, and when one of them changed.
+    std::unique_ptr<xoj::dashboard::FileWatcher> dashboardWatcher;
+    std::shared_ptr<xoj::dashboard::ThumbnailCache> dashboardThumbnailCache;
+    std::unique_ptr<xoj::dashboard::ThumbnailService> dashboardThumbnails;
+    std::unique_ptr<xoj::dashboard::DashboardModel> dashboardModel;
+    std::unique_ptr<xoj::dashboard::DashboardPage> dashboardPage;
 
     bool maximized = false;
     bool darkMode = false;

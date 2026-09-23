@@ -148,6 +148,17 @@ void checkForEmergencySave(Control* control) {
                         deleteFile(file, ctrl->getGtkWindow());
                     });
                 }
+
+                /*
+                 * Plan 006, step 6: this question is the one recovery condition that still blocks at
+                 * startup - the crash copy is not one the dashboard's inventory lists, so it has to
+                 * be asked about before there is a dashboard to show it on. Once it is answered, the
+                 * dashboard is what the user gets: the recovery copies the inventory does list, the
+                 * notes they were working on and the way back to the document the answer restored.
+                 */
+                if (MainWindow* window = ctrl->getWindow(); window != nullptr) {
+                    window->showHome();
+                }
             });
 }
 

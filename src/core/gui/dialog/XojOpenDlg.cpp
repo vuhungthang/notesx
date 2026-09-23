@@ -150,6 +150,22 @@ void xoj::OpenDlg::showOpenFileDialog(GtkWindow* parent, Settings* settings, std
     popup.show(parent);
 }
 
+void xoj::OpenDlg::showOpenFolderDialog(GtkWindow* parent, Settings* settings, std::function<void(fs::path)> callback) {
+    auto popup = xoj::popup::PopupWindowWrapper<FileDlg>(_("Add a folder"), std::move(callback));
+
+    auto* fc = GTK_FILE_CHOOSER(popup.getPopup()->getWindow());
+    gtk_file_chooser_set_action(fc, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER);
+    // The dialog was built with a file's buttons: choosing a folder should not say "Open".
+    if (GtkWidget* accept = gtk_dialog_get_widget_for_response(GTK_DIALOG(fc), GTK_RESPONSE_OK); accept != nullptr) {
+        gtk_button_set_label(GTK_BUTTON(accept), _("Add folder"));
+    }
+
+    addlastSavePathShortcut(fc, settings);
+    setCurrentFolderToLastOpenPath(fc, settings);
+
+    popup.show(parent);
+}
+
 void xoj::OpenDlg::showAnnotatePdfDialog(GtkWindow* parent, Settings* settings,
                                          std::function<void(fs::path, bool)> callback) {
     auto popup = xoj::popup::PopupWindowWrapper<FileDlg>(_("Annotate Pdf file"),

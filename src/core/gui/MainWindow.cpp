@@ -10,6 +10,7 @@
 #include "control/AudioController.h"                    // for AudioController
 #include "control/Control.h"                            // for Control
 #include "control/DeviceListHelper.h"                   // for getSourceMapping
+#include "control/RecentManager.h"                      // for the recent files
 #include "control/ScrollHandler.h"                      // for ScrollHandler
 #include "control/actions/ActionDatabase.h"             // for ActionDatabase
 #include "control/jobs/XournalScheduler.h"              // for XournalScheduler
@@ -17,11 +18,18 @@
 #include "control/settings/Settings.h"                  // for Settings
 #include "control/settings/SettingsEnums.h"             // for SCROLLBAR_HIDE_HO...
 #include "control/zoom/ZoomControl.h"                   // for ZoomControl
+#include "dashboard/FileWatcher.h"                      // for FileWatcher
+#include "dashboard/RecoveryActions.h"                  // for the recovery file work
+#include "dashboard/ThumbnailCache.h"                   // for ThumbnailCache
 #include "gui/FloatingToolbox.h"                        // for FloatingToolbox
 #include "gui/GladeGui.h"                               // for GladeGui
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
-#include "gui/SearchBar.h"                              // for SearchBar
 #include "gui/SafetyStatusBar.h"                        // for SafetyStatusBar (Plan 004)
+#include "gui/SearchBar.h"                              // for SearchBar
+#include "gui/dashboard/DashboardPage.h"                // for DashboardPage
+#include "gui/dashboard/SurfaceStack.h"                 // for SurfaceStack
+#include "gui/dialog/XojOpenDlg.h"                      // for the file and folder choosers
+#include "gui/dialog/XojSaveDlg.h"                      // for the save-as chooser
 #include "gui/inputdevices/InputEvents.h"               // for INPUT_DEVICE_TOUC...
 #include "gui/menus/menubar/Menubar.h"                  // for Menubar
 #include "gui/menus/menubar/ToolbarSelectionSubmenu.h"  // for ToolbarSelectionSubmenu
@@ -33,6 +41,7 @@
 #include "gui/toolbarMenubar/model/ToolbarModel.h"      // for ToolbarModel
 #include "gui/widgets/SpinPageAdapter.h"                // for SpinPageAdapter
 #include "gui/widgets/XournalWidget.h"                  // for gtk_xournal_get_l...
+#include "model/Document.h"                             // for Document (the open document's path)
 #include "util/GListView.h"                             // for GListView, GListV...
 #include "util/GtkUtil.h"                               // for getWidgetDPI
 #include "util/PathUtil.h"                              // for getConfigFile
@@ -80,10 +89,8 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
      * as its only child, so it never competes with a toolbar for a slot and never covers content.
      */
     this->safetyStatusBar = std::make_unique<SafetyStatusBar>(SafetyStatusBar::Callbacks{
-            .showDetails =
-                    [control](const std::string& details, bool retryable) {
-                        control->showSafetyDetails(details, retryable);
-                    },
+            .showDetails = [control](const std::string& details,
+                                     bool retryable) { control->showSafetyDetails(details, retryable); },
             .retry = [control]() { control->retryFailedSafetyOperation(); },
             .refresh = [this]() { this->control->pushSafetyState(); }});
 
@@ -100,6 +107,9 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     for (size_t i = 0; i < TOOLBAR_DEFINITIONS_LEN; i++) {
         this->toolbarWidgets[i].reset(get(TOOLBAR_DEFINITIONS[i].guiName), xoj::util::ref);
     }
+
+    // Plan 006: the home surface, built before the stack that holds it.
+    buildDashboard();
 
     initXournalWidget();
 
@@ -191,6 +201,18 @@ void MainWindow::populate(GladeSearchpath* gladeSearchPath) {
 GMenuModel* MainWindow::getMenuModel() const { return menubar->getModel(); }
 
 MainWindow::~MainWindow() {
+    /*
+     * Plan 006: the dashboard's watches and its outstanding previews go with the window that asked
+     * for them. A watcher that outlived the window would call into a dashboard that is gone, and a
+     * preview that arrived afterwards would be handed to a page that no longer exists.
+     */
+    if (this->dashboardWatcher != nullptr) {
+        this->dashboardWatcher->stop();
+    }
+    if (this->dashboardThumbnails != nullptr) {
+        this->dashboardThumbnails->cancelAll();
+    }
+
     // The settings outlive the window and this window is their handler data: a subscription left
     // behind has them call into a window that is gone (the next window's colorscheme update is
     // enough to trigger it). GtkSettings are per screen and never released, so the handlers have
@@ -346,7 +368,10 @@ void MainWindow::initXournalWidget() {
 
     setGtkTouchscreenScrollingForDeviceMapping();
 
-    gtk_box_append(GTK_BOX(get("boxContents")), winXournal);
+    // Plan 006: the editor is one page of the window's two surfaces. It is the widget it always
+    // was, put in a stack so the home surface can be shown beside it: what changes when the surface
+    // changes is what is visible, and nothing about the document.
+    buildSurfaceStack();
 
     scrollHandling = std::make_unique<ScrollHandling>(GTK_SCROLLED_WINDOW(winXournal));
 
@@ -665,6 +690,380 @@ auto MainWindow::setFullscreen(bool enabled) const -> void {
 }
 
 auto MainWindow::isDarkTheme() const -> bool { return this->darkMode; }
+
+void MainWindow::buildSurfaceStack() {
+    xoj::dashboard::SurfaceStack::Callbacks callbacks;
+    // The index is made current before the surface is shown, and the dashboard is told which
+    // surface is on screen so it only asks for previews while it is the one being looked at.
+    callbacks.prepareHome = [this]() { this->loadDashboardSources(); };
+    callbacks.shown = [this](bool home) { this->dashboardPage->setActive(home); };
+
+    this->surfaces = std::make_unique<xoj::dashboard::SurfaceStack>(
+            GTK_WINDOW(getWindow()), winXournal, this->dashboardPage->getWidget(), std::move(callbacks));
+
+    // The bar goes in first: it carries the one way from the editor to the dashboard, and the stack
+    // under it holds both surfaces.
+    gtk_box_append(GTK_BOX(get("boxContents")), this->surfaces->getBar());
+    gtk_box_append(GTK_BOX(get("boxContents")), this->surfaces->getWidget());
+}
+
+void MainWindow::buildDashboard() {
+    this->dashboardThumbnailCache =
+            std::make_shared<xoj::dashboard::ThumbnailCache>(Util::getCacheSubfolder("thumbnails", true));
+    this->dashboardThumbnails = std::make_unique<xoj::dashboard::ThumbnailService>(this->dashboardThumbnailCache);
+    this->dashboardModel = std::make_unique<xoj::dashboard::DashboardModel>();
+
+    /*
+     * Plan 006, step 7: the files the dashboard shows are watched, and a burst of changes is one
+     * rebuild rather than one per event. The rebuild itself happens here, on the main loop: the
+     * model is read by widgets, so what the watch does is say that something changed.
+     */
+    this->dashboardWatcher = std::make_unique<xoj::dashboard::FileWatcher>();
+    this->dashboardWatcher->setCallback([this](const std::vector<fs::path>&) { this->loadDashboardSources(); });
+
+    xoj::dashboard::DashboardPage::Callbacks callbacks;
+
+    /*
+     * Opening a card opens the file it stands for: the same call the open dialog, the recent menu
+     * and the editor use. When it succeeds the editor is shown, because a file the user opened is a
+     * file they want to see; when it does not, the dashboard stays and is rebuilt so its card can
+     * say what is wrong with the file.
+     */
+    callbacks.open = [this](const fs::path& path) {
+        this->control->openFile(path, [this](bool success) {
+            if (success) {
+                this->showEditor();
+            } else {
+                this->loadDashboardSources();
+            }
+        });
+    };
+    callbacks.openFile = [this]() { this->askForDashboardOpen(); };
+    callbacks.newNote = [this]() {
+        this->control->clearSelectionEndText();
+        this->control->newFile();
+    };
+    /*
+     * A quick note is a note started without choosing anything: the established way to start a blank
+     * document, and then the editor, so that writing something down is what happens next. It asks
+     * for no path, because where a note lives is the user's decision and not something to put
+     * between them and the thing they wanted to write.
+     */
+    callbacks.quickNote = [this]() {
+        this->control->clearSelectionEndText();
+        this->control->newFile();
+        this->showEditor();
+    };
+    callbacks.annotatePdf = [this]() {
+        this->control->clearSelectionEndText();
+        this->control->askToAnnotatePdf();
+    };
+    callbacks.addFolder = [this]() { this->askForDashboardFolder(); };
+
+    /*
+     * Pinning, forgetting and folder changes write the dashboard's own settings and then rebuild
+     * from them. No file is created, moved, renamed or rewritten by any of it: what changes is
+     * which paths this list holds.
+     */
+    callbacks.setPinned = [this](const fs::path& path, bool pinned) {
+        Settings* settings = this->control->getSettings();
+        const bool changed = pinned ? settings->pinDashboardFile(path) : settings->unpinDashboardFile(path);
+        if (changed) {
+            this->loadDashboardSources();
+        }
+    };
+    callbacks.forget = [this](const fs::path& path) {
+        Settings* settings = this->control->getSettings();
+        settings->unpinDashboardFile(path);
+        // The desktop's own recent list drops the path as well, so the card does not come back the
+        // next time the window is opened. The file itself is left where it is.
+        RecentManager::removeRecentFileFilename(path);
+        this->loadDashboardSources();
+    };
+    callbacks.locate = [this](const fs::path& path) {
+        // A file that moved: the user points at where it is now, and that path takes its place.
+        xoj::OpenDlg::showOpenFileDialog(this->control->getGtkWindow(), this->control->getSettings(),
+                                         [this, path](fs::path found) {
+                                             if (found.empty()) {
+                                                 return;
+                                             }
+                                             Settings* settings = this->control->getSettings();
+                                             settings->unpinDashboardFile(path);
+                                             RecentManager::removeRecentFileFilename(path);
+                                             settings->pinDashboardFile(found);
+                                             this->loadDashboardSources();
+                                         });
+    };
+    callbacks.removeFolder = [this](const fs::path& folder) {
+        if (this->control->getSettings()->removeDashboardFolder(folder)) {
+            this->loadDashboardSources();
+        }
+    };
+    callbacks.setFolderRecursive = [this](const fs::path& folder, bool recursive) {
+        if (this->control->getSettings()->setDashboardFolderRecursive(folder, recursive)) {
+            this->loadDashboardSources();
+        }
+    };
+
+    /*
+     * Plan 006, step 6: what Plan 004's inventory found, offered as cards rather than as a question
+     * at startup. Reading the inventory parses no document, and nothing here writes to the document
+     * a copy came from: the copy is opened, copied or deleted, and the original is left alone.
+     */
+    callbacks.openRecovery = [this](const xoj::dashboard::RecoveryCard& card) { this->openRecoveredCopy(card); };
+    callbacks.saveRecoveryAs = [this](const xoj::dashboard::RecoveryCard& card) { this->saveRecoveredCopyAs(card); };
+    callbacks.revealRecovery = [this](const xoj::dashboard::RecoveryCard& card) { this->revealRecoveredCopy(card); };
+    callbacks.deleteRecovery = [this](const xoj::dashboard::RecoveryCard& card) { this->deleteRecoveredCopy(card); };
+    /*
+     * The one thing the dashboard asks about before doing it: deleting a recovered copy cannot be
+     * undone. The question is the page's - it is what makes "Delete requires an explicit
+     * confirmation" a property of the page - and showing it is this window's.
+     */
+    callbacks.confirm = [this](const std::string& title, const std::string& message, std::function<void()> confirmed) {
+        XojMsgBox::askQuestion(this->control->getGtkWindow(), title, message, {{_("Cancel"), 0}, {_("Delete"), 1}},
+                               [confirmed = std::move(confirmed)](int response) {
+                                   if (response == 1 && confirmed) {
+                                       confirmed();
+                                   }
+                               });
+    };
+
+    callbacks.backToDocument = [this]() { this->showEditor(); };
+
+    this->dashboardPage = std::make_unique<xoj::dashboard::DashboardPage>(*this->dashboardModel, std::move(callbacks),
+                                                                          this->dashboardThumbnails.get());
+}
+
+void MainWindow::askForDashboardOpen() {
+    /*
+     * File > Open, and then the editor. The dialog, the question about the document that is open
+     * now and the loader are all the established ones; the only thing added is where the user ends
+     * up once a file has been opened.
+     */
+    this->control->close(
+            [this](bool closed) {
+                if (!closed) {
+                    return;
+                }
+                xoj::OpenDlg::showOpenFileDialog(this->control->getGtkWindow(), this->control->getSettings(),
+                                                 [this](fs::path path) {
+                                                     if (path.empty()) {
+                                                         return;
+                                                     }
+                                                     this->control->openFileWithoutSavingTheCurrentDocument(
+                                                             std::move(path), false, -1, [this](bool success) {
+                                                                 if (success) {
+                                                                     this->showEditor();
+                                                                 }
+                                                             });
+                                                 });
+            },
+            true);
+}
+
+void MainWindow::askForDashboardFolder() {
+    xoj::OpenDlg::showOpenFolderDialog(this->control->getGtkWindow(), this->control->getSettings(),
+                                       [this](fs::path folder) {
+                                           if (folder.empty()) {
+                                               return;
+                                           }
+                                           if (this->control->getSettings()->addDashboardFolder(folder, false)) {
+                                               this->loadDashboardSources();
+                                           }
+                                       });
+}
+
+void MainWindow::loadDashboardSources() {
+    Settings* settings = this->control->getSettings();
+
+    this->dashboardModel->setPinnedFiles(settings->getDashboardPinnedFiles());
+
+    std::vector<xoj::dashboard::LibraryFolder> folders;
+    for (const DashboardFolder& listed: settings->getDashboardFolders()) {
+        xoj::dashboard::LibraryFolder folder;
+        folder.path = listed.path;
+        folder.displayName = folder.path.filename().string();
+        folder.recursive = listed.recursive;
+        folder.enabled = true;
+        folder.state = xoj::dashboard::LibraryFolder::inspect(folder.path);
+        folders.emplace_back(std::move(folder));
+    }
+    this->dashboardModel->setLibraryFolders(std::move(folders));
+
+    /*
+     * What the user was working on comes from the desktop's recent list, whose entries are the
+     * files' own paths: a card here is a file the user has, not a copy of one.
+     */
+    std::vector<fs::path> recent;
+    const RecentManager::RecentFiles recentFiles = RecentManager::getRecentFiles();
+    for (const auto& group: {std::ref(recentFiles.recentXoppFiles), std::ref(recentFiles.recentPdfFiles)}) {
+        for (const auto& info: group.get()) {
+            const char* uri = gtk_recent_info_get_uri(info.get());
+            if (uri == nullptr) {
+                continue;
+            }
+            if (std::optional<fs::path> path = Util::fromUri(uri); path.has_value()) {
+                recent.emplace_back(*path);
+            }
+        }
+    }
+    this->dashboardModel->setRecentFiles(std::move(recent));
+
+    // What can be recovered: Plan 004's inventory, read as metadata only, so a refresh costs one
+    // look at the autosave folder rather than a document load.
+    this->dashboardModel->setRecoveryCandidates(this->control->getRecoveryCandidates());
+
+    this->dashboardModel->refresh();
+
+    /*
+     * The dashboard has just been rebuilt from these files, so these are the files to watch: a path
+     * that is no longer shown is no longer watched, and one that is new to the list is watched from
+     * now on. The value the following watch was built from is passed on so a driver that never
+     * changes does not have to be rebuilt for nothing.
+     */
+    std::vector<fs::path> documents;
+    for (const xoj::dashboard::DocumentCard& card: this->dashboardModel->getCards()) {
+        if (card.location == xoj::dashboard::DocumentCard::Location::Present) {
+            documents.emplace_back(card.path);
+        }
+    }
+    this->dashboardWatcher->watch(documents, this->dashboardModel->getLibraryFolders());
+
+    // The way back says which document it goes back to, so the button is worth pressing before
+    // reading what it does not say.
+    const fs::path documentPath = this->control->getDocument()->getFilepath();
+    this->dashboardPage->setOpenDocument(documentPath.empty() ? _("an unsaved note") :
+                                                                documentPath.filename().string());
+
+    this->dashboardPage->refresh();
+}
+
+void MainWindow::refreshDashboard() { this->loadDashboardSources(); }
+
+void MainWindow::openRecoveredCopy(const xoj::dashboard::RecoveryCard& card) {
+    /*
+     * The copy is opened, not restored: the document it came from is not written to, so the user can
+     * look at what was recovered, and saving it somewhere is their decision. A copy that cannot be
+     * opened leaves the dashboard as it is, with the card saying why.
+     */
+    this->control->openFile(card.recoveryPath, [this](bool success) {
+        if (success) {
+            this->showEditor();
+        } else {
+            this->loadDashboardSources();
+        }
+    });
+}
+
+void MainWindow::saveRecoveredCopyAs(const xoj::dashboard::RecoveryCard& card) {
+    // Where the copy came from is what the user thinks of as "the file", so that is the name the
+    // chooser starts with; the copy's own name is the fallback for a recovery with no document.
+    const fs::path suggested = card.originalPath.empty() ? card.recoveryPath : card.originalPath;
+    xoj::SaveExportDialog::showSaveFileDialog(this->control->getGtkWindow(), this->control->getSettings(), suggested,
+                                              [this, card](std::optional<fs::path> target) {
+                                                  if (!target.has_value()) {
+                                                      return;
+                                                  }
+                                                  this->writeRecoveredCopyTo(card, *target, false);
+                                              });
+}
+
+void MainWindow::writeRecoveredCopyTo(const xoj::dashboard::RecoveryCard& card, const fs::path& target,
+                                      bool allowOriginal) {
+    /*
+     * Writing over the document a copy came from is the only thing here that replaces something the
+     * user has, so it is the only thing that is asked about: every other destination is a place the
+     * user named themselves.
+     */
+    if (!allowOriginal && xoj::dashboard::RecoveryActions::isOriginal(card, target)) {
+        XojMsgBox::askQuestion(
+                this->control->getGtkWindow(), _("Replace the document?"),
+                FS(_F("\"{1}\" is the document this copy was recovered from. Writing the copy there replaces "
+                      "what the document holds now.") %
+                   target.u8string()),
+                {{_("Cancel"), 0}, {_("Replace it"), 1}}, [this, card, target](int response) {
+                    if (response == 1) {
+                        this->writeRecoveredCopyTo(card, target, true);
+                    }
+                });
+        return;
+    }
+
+    std::string error;
+    if (!xoj::dashboard::RecoveryActions::copyTo(card, target, allowOriginal, error)) {
+        XojMsgBox::showErrorToUser(this->control->getGtkWindow(), error);
+        return;
+    }
+
+    // The copy is written and the recovery copy is still there: it is deleted when the user says so,
+    // never as a side effect of having saved it once.
+    this->loadDashboardSources();
+}
+
+void MainWindow::revealRecoveredCopy(const xoj::dashboard::RecoveryCard& card) {
+    /*
+     * Where the recovered work is: the folder the document is in when it is still there, and the
+     * folder the copy itself is in otherwise. The folder is opened rather than the file, because
+     * opening the file would open a document, which is not what "show me where it is" means.
+     */
+    std::error_code code;
+    const bool original = !card.originalPath.empty() && fs::exists(card.originalPath, code);
+    const fs::path file = original ? card.originalPath : card.recoveryPath;
+    const fs::path folder = file.parent_path();
+    if (folder.empty()) {
+        return;
+    }
+
+    const std::optional<std::string> uri = Util::toUri(folder);
+    if (!uri.has_value()) {
+        XojMsgBox::showErrorToUser(this->control->getGtkWindow(),
+                                   FS(_F("Cannot open the folder of \"{1}\"") % file.u8string()));
+        return;
+    }
+
+    GError* error = nullptr;
+    if (!gtk_show_uri_on_window(this->control->getGtkWindow(), uri->c_str(), GDK_CURRENT_TIME, &error)) {
+        const std::string message =
+                error != nullptr ?
+                        FS(_F("Cannot open the folder of \"{1}\":\n{2}") % file.u8string() % error->message) :
+                        FS(_F("Cannot open the folder of \"{1}\"") % file.u8string());
+        if (error != nullptr) {
+            g_error_free(error);
+        }
+        XojMsgBox::showErrorToUser(this->control->getGtkWindow(), message);
+    }
+}
+
+void MainWindow::deleteRecoveredCopy(const xoj::dashboard::RecoveryCard& card) {
+    std::string error;
+    if (!xoj::dashboard::RecoveryActions::removeCopy(card, error)) {
+        // A copy that could not be deleted must not look deleted: the failure is said out loud and
+        // the card is rebuilt from what is actually there.
+        XojMsgBox::showErrorToUser(this->control->getGtkWindow(), error);
+    }
+
+    this->loadDashboardSources();
+}
+
+void MainWindow::showHome() {
+    // What the surface does is the stack's: this is only the entry point the action, the tests and
+    // the rest of the window use.
+    this->surfaces->showHome();
+}
+
+void MainWindow::showEditor() { this->surfaces->showEditor(); }
+
+auto MainWindow::isHomeShown() const -> bool { return this->surfaces != nullptr && this->surfaces->isHomeShown(); }
+
+auto MainWindow::getDashboardPage() const -> xoj::dashboard::DashboardPage* { return this->dashboardPage.get(); }
+
+auto MainWindow::getSurfaceStack() const -> GtkWidget* {
+    return this->surfaces != nullptr ? this->surfaces->getWidget() : nullptr;
+}
+
+auto MainWindow::getHomeButton() const -> GtkWidget* {
+    return this->surfaces != nullptr ? this->surfaces->getHomeButton() : nullptr;
+}
 
 auto MainWindow::getXournal() const -> XournalView* { return xournal.get(); }
 

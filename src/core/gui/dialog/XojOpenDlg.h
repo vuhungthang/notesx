@@ -25,6 +25,12 @@ void showOpenFileDialog(GtkWindow* parent, Settings* settings, std::function<voi
 void showAnnotatePdfDialog(GtkWindow* parent, Settings* settings, std::function<void(fs::path, bool)> callback);
 void showOpenTemplateDialog(GtkWindow* parent, Settings* settings, std::function<void(fs::path)> callback);
 
+/**
+ * Plan 006: choose a folder rather than a file - what the dashboard's "Add folder" action needs.
+ * Only the chosen path is handed back: nothing inside the folder is read or changed here.
+ */
+void showOpenFolderDialog(GtkWindow* parent, Settings* settings, std::function<void(fs::path)> callback);
+
 /// @param callback(path, attachImg)
 void showOpenImageDialog(GtkWindow* parent, Settings* settings, std::function<void(fs::path, bool)> callback);
 
