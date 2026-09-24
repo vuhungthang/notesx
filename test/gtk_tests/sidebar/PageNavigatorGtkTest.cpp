@@ -21,10 +21,15 @@
 #include <gtest/gtest.h>
 #include <gtk/gtk.h>
 
+#include "control/Control.h"
 #include "gui/Builder.h"
 #include "gui/GladeSearchpath.h"
+#include "gui/MainWindow.h"
+#include "gui/XournalView.h"
 #include "gui/dialog/ExportDialog.h"
 #include "gui/sidebar/previews/page/SidebarPreviewPages.h"  // for SidebarPreviewPages
+#include "model/Document.h"
+#include "model/XojPage.h"
 
 #include "../dialog/GtkTest.h"
 #include "config-test.h"
@@ -849,3 +854,145 @@ class PageCardStyleTest: public GtkTest {
     }
 };
 TEST_F(PageCardStyleTest, everyClassACardSetsIsStyledByTheApplicationStylesheet) {}
+
+/*
+ * Plan 010: where the caption of a page card sits.
+ *
+ * A card is a vertical box - marker, thumbnail, caption - in overview mode and a horizontal one
+ * beside a thumbnail in list mode, and the caption follows the mode: centred under the card, where
+ * everything else on it (the checkmark, the thumbnail, the drawn page number) is centred, and
+ * left-aligned beside a thumbnail in list mode, where a wrapped line of text would be wrong.
+ *
+ * The label is created hidden and shown only in list mode (SidebarPreviewPageEntry.cpp:62 and
+ * :239), yet the user sees the caption in overview mode. The navigator shows a container with
+ * gtk_widget_show_all() when it (re)builds it (SidebarPreviewPages.cpp:207), and show_all shows
+ * every descendant of it, the explicitly hidden caption included - so the caption is on screen in
+ * overview mode as well, at the left edge of a card that the flow box has widened to the widest of
+ * its columns. That left edge is what this case pins down.
+ *
+ * The cards are real ones, on the Control and the window the application builds, because the
+ * alignment is a property of a card that only exists inside the navigator, and the flow box that
+ * widens the columns is the reason the alignment is visible at all: one page carries a longer name
+ * than the others, so the shorter captions have room beside their text.
+ */
+namespace {
+constexpr size_t CAPTION_PAGES = 3;
+constexpr auto LONG_BACKGROUND_NAME = "A background name long enough to widen the column of the flow box";
+}  // namespace
+
+class PageCardCaptionTest: public GtkTest {
+protected:
+    std::unique_ptr<GladeSearchpath> glade;
+    std::unique_ptr<Control> control;
+    std::unique_ptr<MainWindow> win;
+
+    /// Every caption of the navigator, in tree order. The card owns it directly.
+    auto captions() const -> std::vector<GtkWidget*> {
+        std::vector<GtkWidget*> found;
+        for (GtkWidget* widget: allWidgets(GTK_WIDGET(this->win->getWindow()))) {
+            if (GTK_IS_LABEL(widget) && hasCssClass(widget, "xoj-page-card-metadata")) {
+                found.emplace_back(widget);
+            }
+        }
+        return found;
+    }
+
+    /// What the caption of `page` reads, or an empty string when no card carries it.
+    auto captionOf(size_t page) const -> std::string {
+        for (GtkWidget* caption: captions()) {
+            const char* text = gtk_label_get_text(GTK_LABEL(caption));
+            if (text != nullptr && std::string(text).rfind("Page " + std::to_string(page + 1) + " ", 0) == 0) {
+                return text;
+            }
+        }
+        return std::string();
+    }
+
+    void runTest(GtkApplication* app) override {
+        this->glade = std::make_unique<GladeSearchpath>();
+        this->glade->addSearchDirectory(GET_UI_FOLDER);
+        // The page templates the Control's page type handler reads.
+        this->glade->addSearchDirectory(GET_PAGE_TEMPLATE_FOLDER);
+
+        this->control = std::make_unique<Control>(G_APPLICATION(app), this->glade.get(), true);
+        this->win = std::make_unique<MainWindow>(this->glade.get(), this->control.get(), GTK_APPLICATION(app));
+        this->control->initWindow(this->win.get());
+        this->win->populate(this->glade.get());
+        this->win->show(nullptr);
+        settle();
+
+        // The middle page carries a longer name than the others.
+        for (size_t i = 0; i < CAPTION_PAGES; i++) {
+            auto page = std::make_shared<XojPage>(595.28, 841.89);
+            if (i == 1) {
+                page->setBackgroundName(LONG_BACKGROUND_NAME);
+            }
+            this->control->insertPage(page, i, false);
+        }
+        settle();
+        this->win->getXournal()->layoutPages();
+        settle();
+
+        const std::vector<GtkWidget*> overview = captions();
+        ASSERT_EQ(overview.size(), CAPTION_PAGES) << "every card of the navigator carries one caption";
+        EXPECT_EQ(captionOf(0), "Page 1 \u00b7 Background") << "the caption names the page";
+        EXPECT_EQ(captionOf(1), "Page 2 \u00b7 " + std::string(LONG_BACKGROUND_NAME));
+
+        for (GtkWidget* caption: overview) {
+            GtkWidget* card = gtk_widget_get_parent(caption);
+            ASSERT_NE(card, nullptr);
+            EXPECT_TRUE(hasCssClass(card, "xoj-page-card-overview")) << "the navigator starts in overview mode";
+            EXPECT_TRUE(gtk_widget_get_visible(caption))
+                    << "the caption is on screen under the card in overview mode";
+            EXPECT_EQ(gtk_widget_get_halign(caption), GTK_ALIGN_FILL)
+                    << "the label has to fill the card for its alignment to place the text";
+            EXPECT_EQ(gtk_label_get_ellipsize(GTK_LABEL(caption)), PANGO_ELLIPSIZE_END)
+                    << "a caption too long for the card is cut at its end, never overflowing";
+            EXPECT_FLOAT_EQ(static_cast<float>(gtk_label_get_xalign(GTK_LABEL(caption))), 0.5f)
+                    << "the caption is centred under the card, like everything else on it";
+            EXPECT_FLOAT_EQ(static_cast<float>(gtk_label_get_yalign(GTK_LABEL(caption))), 0.5f);
+        }
+
+        // The card is narrow (a sidebar column), so a caption that does not fit it is given less
+        // room than its text needs - which is what ellipsization is. It is cut at its end, inside
+        // the card, and never widened past it or made to overflow.
+        for (GtkWidget* caption: overview) {
+            int minimum = 0;
+            int natural = 0;
+            gtk_widget_get_preferred_width(caption, &minimum, &natural);
+            const int allocation = gtk_widget_get_allocated_width(caption);
+            ASSERT_GT(allocation, 0) << "the card was laid out";
+            EXPECT_GT(minimum, 0) << "the caption always leaves a visible piece of itself";
+        }
+        GtkWidget* longCaption = overview[1];
+        int longMinimum = 0;
+        int longNatural = 0;
+        gtk_widget_get_preferred_width(longCaption, &longMinimum, &longNatural);
+        EXPECT_LT(gtk_widget_get_allocated_width(longCaption), longNatural)
+                << "a caption too long for the card is ellipsized at its end, not widened";
+
+        // The same caption beside a thumbnail in list mode: there the text starts at the left edge
+        // of the label, which is what a line read next to a picture wants.
+        GtkWidget* listButton = byId(GTK_WIDGET(this->win->getWindow()), "btPagesList");
+        ASSERT_NE(listButton, nullptr) << "the toolbar offers the list density";
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(listButton), TRUE);
+        settle();
+
+        const std::vector<GtkWidget*> list = captions();
+        ASSERT_EQ(list.size(), CAPTION_PAGES) << "the cards keep their caption when they change container";
+        for (GtkWidget* caption: list) {
+            GtkWidget* card = gtk_widget_get_parent(caption);
+            ASSERT_NE(card, nullptr);
+            EXPECT_TRUE(hasCssClass(card, "xoj-page-card-list"));
+            EXPECT_TRUE(gtk_widget_get_visible(caption)) << "the caption is on screen beside the thumbnail";
+            EXPECT_FLOAT_EQ(static_cast<float>(gtk_label_get_xalign(GTK_LABEL(caption))), 0.f)
+                    << "beside a thumbnail the caption reads left-aligned";
+            EXPECT_EQ(gtk_label_get_ellipsize(GTK_LABEL(caption)), PANGO_ELLIPSIZE_END);
+        }
+
+        this->win.reset();
+        this->control.reset();
+        this->glade.reset();
+    }
+};
+TEST_F(PageCardCaptionTest, theCaptionIsCentredUnderACardAndLeftAlignedBesideOne) {}

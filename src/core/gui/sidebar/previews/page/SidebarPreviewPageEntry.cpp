@@ -31,6 +31,12 @@ constexpr auto CSS_DROP_AFTER = "xoj-page-card-drop-after";
 constexpr auto CSS_MARKER = "xoj-page-selection-marker";
 constexpr auto CSS_METADATA = "xoj-page-card-metadata";
 
+/// Where the caption's text sits inside its label. Overview mode shows the caption under the card,
+/// centred like the checkmark, the thumbnail and the drawn page number; list mode puts it beside a
+/// thumbnail, where a line of text is read from the left.
+constexpr double CAPTION_XALIGN_OVERVIEW = 0.5;
+constexpr double CAPTION_XALIGN_LIST = 0.;
+
 /// The selection marker. A glyph, not a colour: it stays readable in every theme and to a user who
 /// cannot tell the selected border from the unselected one.
 constexpr auto SELECTION_GLYPH = "\u2713";
@@ -56,7 +62,10 @@ SidebarPreviewPageEntry::SidebarPreviewPageEntry(SidebarPreviewPages* sidebar, c
 
     this->metadata = gtk_label_new(nullptr);
     gtk_widget_add_css_class(this->metadata, CSS_METADATA);
-    gtk_label_set_xalign(GTK_LABEL(this->metadata), 0.);
+    // Overview is the density a card is born in; setListMode() moves the text to the left edge for
+    // the rows of the other one.
+    gtk_label_set_xalign(GTK_LABEL(this->metadata), CAPTION_XALIGN_OVERVIEW);
+    // Centring the text never lets it overflow: a caption too long for the card is cut at its end.
     gtk_label_set_ellipsize(GTK_LABEL(this->metadata), PANGO_ELLIPSIZE_END);
     gtk_widget_set_can_focus(this->metadata, false);
     gtk_widget_set_visible(this->metadata, false);
@@ -237,6 +246,9 @@ void SidebarPreviewPageEntry::setListMode(bool listMode) {
     gtk_orientable_set_orientation(GTK_ORIENTABLE(this->card.get()),
                                    listMode ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL);
     gtk_widget_set_visible(this->metadata, listMode);
+    // The caption follows the shape of the card: centred under a thumbnail, read from the left of
+    // the label when it sits beside one.
+    gtk_label_set_xalign(GTK_LABEL(this->metadata), listMode ? CAPTION_XALIGN_LIST : CAPTION_XALIGN_OVERVIEW);
     gtk_widget_set_valign(this->metadata, listMode ? GTK_ALIGN_CENTER : GTK_ALIGN_FILL);
 
     // The thumbnail was rendered at the other mode's zoom, so it is not the size this mode draws
