@@ -42,7 +42,45 @@ auto ToolPropertyPopoverFactory::createPopover() const -> GtkWidget* {
     gtk_widget_add_css_class(popover, "toolbar");
     gtk_widget_add_css_class(popover, "xoj-tool-property-popover");
     GtkWidget* content = panel->createWidget();
-    gtk_popover_set_child(GTK_POPOVER(popover), content);
+
+    /*
+     * The panel is capped to the screen rather than trusted to fit it: a tool's properties stack
+     * up (five widths, a colour, a fill, six drawing types, four line styles, a preset row each),
+     * and a popover that asks for more height than the workarea has is clamped by GTK instead of
+     * laid out - every row is compressed into the space of a fraction of itself, which is how the
+     * panel came to be squeezed too tight to read, let alone click. A scrolled window gives the
+     * panel its natural height and hands the overflow a scrollbar, so no tool ever grows a panel
+     * the screen cannot show.
+     *
+     * The cap is a ratio of the workarea, not a hard number: the same 80% is generous on a tall
+     * monitor and honest on a small laptop screen, and the width cap keeps a long preset name
+     * from pushing the popover off the side of the screen. Policy NONE/NONE: the scrollbar is
+     * shown only while it is needed, so a panel that fits shows no scrollbar at all.
+     */
+    GtkWidget* scroll = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    // Natural height propagates, so a panel that fits the cap keeps exactly its own height; the
+    // max-content height below is what caps one that does not.
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), true);
+    if (this->parent != nullptr) {
+        GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(this->parent));
+        // The parent's own window is not there before it is realized - a popover can be built
+        // first - so the first monitor of the display is the fallback, and its workarea is what
+        // the cap uses then.
+        GdkWindow* window = gtk_widget_get_window(GTK_WIDGET(this->parent));
+        GdkMonitor* monitor = window != nullptr ? gdk_display_get_monitor_at_window(display, window) :
+                                                  gdk_display_get_monitor(display, 0);
+        if (monitor != nullptr) {
+            GdkRectangle workarea{};
+            gdk_monitor_get_workarea(monitor, &workarea);
+            if (workarea.height > 0) {
+                gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll),
+                                                           static_cast<int>(workarea.height * 0.8));
+            }
+        }
+    }
+    gtk_container_add(GTK_CONTAINER(scroll), content);
+    gtk_popover_set_child(GTK_POPOVER(popover), scroll);
 
     /*
      * A popover is not a descendant of the widget it is anchored to - GTK gives it to the window -
@@ -52,7 +90,7 @@ auto ToolPropertyPopoverFactory::createPopover() const -> GtkWidget* {
      * would then draw its own frame around it (gtk_render_frame_gap asserts on a collapsed
      * allocation). Every other popover factory in the code base shows its content for this reason.
      */
-    gtk_widget_show_all(content);
+    gtk_widget_show_all(scroll);
 
     /*
      * Shown first, state applied second: gtk_widget_show_all() is recursive, so it undoes the rows

@@ -138,6 +138,22 @@ void collectWidgets(GtkWidget* root, std::vector<GtkWidget*>& out) {
     }
 }
 
+/// The panel a tool property popover carries: the popover's child is a scrolled window (which
+/// caps the panel to the screen), whose own child is the viewport GTK puts around the content.
+auto panelOfPopover(GtkWidget* popover) -> GtkWidget* {
+    GtkWidget* child = gtk_bin_get_child(GTK_BIN(popover));
+    if (child != nullptr && GTK_IS_SCROLLED_WINDOW(child)) {
+        GtkWidget* viewport = gtk_bin_get_child(GTK_BIN(child));
+        if (viewport != nullptr && GTK_IS_VIEWPORT(viewport)) {
+            GtkWidget* inner = gtk_bin_get_child(GTK_BIN(viewport));
+            if (inner != nullptr) {
+                return inner;
+            }
+        }
+    }
+    return child;
+}
+
 auto allWidgets(GtkWidget* root) -> std::vector<GtkWidget*> {
     std::vector<GtkWidget*> widgets;
     collectWidgets(root, widgets);
@@ -459,9 +475,13 @@ class ToolPropertyPanelStructureTest: public GtkTest {
         EXPECT_TRUE(hasCssClass(popover, "xoj-tool-property-popover"));
         EXPECT_TRUE(hasCssClass(popover, "toolbar"));
 
-        GtkWidget* content = gtk_bin_get_child(GTK_BIN(popover));
+        GtkWidget* content = panelOfPopover(popover);
         ASSERT_NE(content, nullptr);
         EXPECT_TRUE(hasCssClass(content, "xoj-tool-properties"));
+        // The scrolled window that caps the panel to the screen is what the popover holds.
+        GtkWidget* scroller = gtk_bin_get_child(GTK_BIN(popover));
+        ASSERT_NE(scroller, nullptr);
+        EXPECT_TRUE(GTK_IS_SCROLLED_WINDOW(scroller)) << "the panel is capped to the screen by a scroller";
 
         /*
          * The factory shows the panel it hands the popover. The toolbar's own show_all() never
@@ -558,7 +578,7 @@ class ToolPropertyPanelStructureTest: public GtkTest {
                                                  GTK_WINDOW(window), &presetsListener};
         GtkWidget* eraserPopover = eraserFactory.createPopover();
         ASSERT_NE(eraserPopover, nullptr);
-        GtkWidget* eraserContent = gtk_bin_get_child(GTK_BIN(eraserPopover));
+        GtkWidget* eraserContent = panelOfPopover(eraserPopover);
         ASSERT_NE(eraserContent, nullptr);
         EXPECT_TRUE(gtk_widget_get_visible(eraserContent)) << "the factory shows this panel too";
         ASSERT_EQ(labelledRows(eraserContent, ERASER_TYPE_LABELS).size(), 3U);
@@ -591,7 +611,7 @@ class ToolPropertyPanelStructureTest: public GtkTest {
                                                       GTK_WINDOW(window), &presetsListener};
         GtkWidget* highlighterPopover = highlighterFactory.createPopover();
         ASSERT_NE(highlighterPopover, nullptr);
-        GtkWidget* highlighterContent = gtk_bin_get_child(GTK_BIN(highlighterPopover));
+        GtkWidget* highlighterContent = panelOfPopover(highlighterPopover);
         ASSERT_NE(highlighterContent, nullptr);
         EXPECT_EQ(radioButtonNamed(highlighterContent, "whiteout"), nullptr);
         EXPECT_EQ(radioButtonNamed(highlighterContent, "dashed"), nullptr);
@@ -630,7 +650,7 @@ class PresetRowWidthTest: public GtkTest {
                                            &presetsListener};
         GtkWidget* popover = factory.createPopover();
         ASSERT_NE(popover, nullptr);
-        GtkWidget* content = gtk_bin_get_child(GTK_BIN(popover));
+        GtkWidget* content = panelOfPopover(popover);
         ASSERT_NE(content, nullptr);
 
         // The rows the panel built: one per preset, each carrying the preset's name.
@@ -695,6 +715,75 @@ class PresetRowWidthTest: public GtkTest {
     }
 };
 TEST_F(PresetRowWidthTest, thePresetRowsAreIconButtonRowsThatFitThePanelWidth) {}
+
+/*
+ * A tool's panel is capped to the screen: the pen's stacks five widths, a colour, a fill, six
+ * drawing types, four line styles and a preset row each, and on a screen shorter than that the
+ * popover used to be clamped instead of laid out - rows compressed into a fraction of their
+ * height, unreadable and unclickable. The popover now holds a scrolled window whose maximum
+ * content height is a fraction of the workarea, so the overflow scrolls and every row keeps its
+ * own height. (The harness's screens are large, so what is asserted is the cap itself rather than
+ * an actual scrollbar.)
+ */
+class PopoverScrollCapTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        ToolFixture fixture;
+        const fs::path settingsFile = freshSettingsFile("xournalpp-test-gtk_tool_properties_scroll_cap");
+        Settings settings{settingsFile};
+        IconNameHelper icons{&settings};
+
+        ToolPropertyRegistry registry;
+        xoj::toolbar::addBuiltInToolPropertyProviders(registry, icons);
+        ASSERT_NE(registry.find(TOOL_PEN), nullptr);
+
+        GtkWidget* window = gtk_application_window_new(app);
+        StubPresetListListener presetsListener;
+        ToolPropertyPopoverFactory factory{fixture.adapter, settings, *registry.find(TOOL_PEN), GTK_WINDOW(window),
+                                           &presetsListener};
+        GtkWidget* popover = factory.createPopover();
+        ASSERT_NE(popover, nullptr);
+
+        // The popover holds a scroller, and the panel is inside it, shown.
+        GtkWidget* scroller = gtk_bin_get_child(GTK_BIN(popover));
+        ASSERT_NE(scroller, nullptr);
+        ASSERT_TRUE(GTK_IS_SCROLLED_WINDOW(scroller));
+        GtkWidget* panel = panelOfPopover(popover);
+        ASSERT_NE(panel, nullptr);
+        EXPECT_TRUE(hasCssClass(panel, "xoj-tool-properties"));
+        EXPECT_TRUE(gtk_widget_get_visible(panel)) << "the panel is shown inside the scroller";
+
+        // The cap: at most the workarea's height. A backend that reports no workarea (broadway
+        // reports 0x0) gets no cap, which is honest - there is nothing to cap to - so the
+        // assertion runs only when the display says something real.
+        GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
+        ASSERT_NE(display, nullptr);
+        GdkMonitor* monitor = gdk_display_get_monitor(display, 0);
+        ASSERT_NE(monitor, nullptr);
+        GdkRectangle workarea;
+        memset(&workarea, 0, sizeof(workarea));
+        gdk_monitor_get_workarea(monitor, &workarea);
+        const int cap = gtk_scrolled_window_get_max_content_height(GTK_SCROLLED_WINDOW(scroller));
+        if (workarea.height > 0) {
+            EXPECT_GT(cap, 0) << "the popover's content is capped to the screen";
+            EXPECT_LE(cap, static_cast<int>(workarea.height * 0.8) + 1)
+                    << "the cap is a fraction of the workarea, not more than the screen has";
+        } else {
+            EXPECT_EQ(cap, -1) << "a display with no workarea gets no cap rather than a bogus one";
+        }
+
+        // A vertical scrollbar is what carries the overflow: automatic, so a panel that fits
+        // shows none, and never a horizontal one that would cut a row in half.
+        GtkPolicyType hpolicy = GTK_POLICY_ALWAYS, vpolicy = GTK_POLICY_NEVER;
+        gtk_scrolled_window_get_policy(GTK_SCROLLED_WINDOW(scroller), &hpolicy, &vpolicy);
+        EXPECT_EQ(hpolicy, GTK_POLICY_NEVER) << "no horizontal scrollbar: rows are never cut in half";
+        EXPECT_EQ(vpolicy, GTK_POLICY_AUTOMATIC) << "the vertical scrollbar appears only when needed";
+
+        gtk_widget_destroy(popover);
+        gtk_widget_destroy(window);
+        fs::remove_all(settingsFile.parent_path());
+    }
+};
+TEST_F(PopoverScrollCapTest, thePanelIsCappedToAScrollingWindowWhenTheScreenIsShort) {}
 
 /*
  * Plan 003, step 2 and step 3: the panel and the GActions that already own each value stay in step,
@@ -920,7 +1009,7 @@ class ActiveToolPopoverGateTest: public GtkTest {
          * instances of it run, and the handler chain two watches leave behind then logs without data
          * and crashes. The size and visibility below fail either way.
          */
-        GtkWidget* popoverContent = gtk_bin_get_child(GTK_BIN(popover));
+        GtkWidget* popoverContent = panelOfPopover(GTK_WIDGET(popover));
         ASSERT_NE(popoverContent, nullptr);
         EXPECT_TRUE(gtk_widget_get_visible(popoverContent))
                 << "the popover's content is shown: the toolbar it is anchored to never shows it";
