@@ -318,8 +318,13 @@ void theTriggerOffersTheTipOnce(TipServiceFixture& test) {
     ASSERT_TRUE(tips->shownTip().has_value());
     EXPECT_EQ(*tips->shownTip(), TipService::Tip::ToolProperties);
 
-    // Anchored: the tip is shown against the thing it is about, not in a corner.
-    EXPECT_EQ(gtk_popover_get_relative_to(GTK_POPOVER(tips->getPopover())), properties);
+    // Anchored: the tip is shown against the thing it is about, not in a corner - and never against
+    // the popover itself, which GTK3 cannot anchor another popover to: handed the popover, the tip
+    // rendered as a misplaced dark slab over the panel it was about.
+    GtkWidget* anchor = gtk_popover_get_relative_to(GTK_POPOVER(properties));
+    ASSERT_NE(anchor, nullptr) << "the properties popover is anchored to the control that opened it";
+    EXPECT_EQ(gtk_popover_get_relative_to(GTK_POPOVER(tips->getPopover())), anchor)
+            << "the tip points at the control that opened the properties";
 
     // Short, and put away with the button it offers; a keyboard user reaches that button.
     GtkWidget* dismiss = tips->getDismissButton();

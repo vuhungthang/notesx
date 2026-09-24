@@ -22,7 +22,15 @@ void ToolPropertyPopoverFactory::destroyPanel(gpointer data) { delete static_cas
 void ToolPropertyPopoverFactory::offerPropertiesTipOnce(GtkWidget* popover, gpointer parentWindow) {
     xoj::gui::TipService* tips = xoj::gui::TipService::of(GTK_WINDOW(parentWindow));
     if (tips != nullptr) {
-        tips->offer(xoj::gui::TipService::Tip::ToolProperties, popover);
+        /*
+         * The tip points at the control that opened the popover, never at the popover itself: GTK3
+         * cannot anchor a popover to another popover, and a tip handed one renders as a misplaced
+         * dark slab over the panel it is about. The anchor the popover was attached to is the
+         * toolbar control the user clicked, which is on the window's own surface and is what the
+         * tip should point at anyway.
+         */
+        GtkWidget* anchor = gtk_popover_get_relative_to(GTK_POPOVER(popover));
+        tips->offer(xoj::gui::TipService::Tip::ToolProperties, anchor != nullptr ? anchor : popover);
     }
 }
 

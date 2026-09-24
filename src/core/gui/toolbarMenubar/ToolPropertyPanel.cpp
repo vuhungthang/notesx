@@ -325,9 +325,17 @@ auto ToolPropertyPanel::createPresetRow(const ToolPreset& preset, std::size_t fa
     GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
     gtk_widget_add_css_class(row, "xoj-preset-row");
 
-    {  // Apply
+    {  // Apply: the preset's own name is the row's primary control, so it takes the room - and
+       // ellipsizes rather than demands it, so a long name widens nothing.
         GtkWidget* apply = gtk_button_new_with_label(preset.name.c_str());
         gtk_widget_set_hexpand(apply, true);
+        if (GtkWidget* label = gtk_bin_get_child(GTK_BIN(apply)); GTK_IS_LABEL(label)) {
+            // Ellipsize caps the minimum; max-width-chars caps the natural width too, which is the
+            // one the popover grows to. Together a long name reads as "Black fine p…" instead of
+            // widening the panel; the full name is in the tooltip.
+            gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+            gtk_label_set_max_width_chars(GTK_LABEL(label), 12);
+        }
         gtk_widget_add_css_class(apply, "xoj-control");
         gtk_widget_add_css_class(apply, "xoj-focus-ring");
         gtk_widget_set_tooltip_text(apply, preset.name.c_str());
@@ -338,10 +346,28 @@ auto ToolPropertyPanel::createPresetRow(const ToolPreset& preset, std::size_t fa
         gtk_box_append(GTK_BOX(row), apply);
     }
 
-    {  // Favourite
-        GtkWidget* favorite = gtk_toggle_button_new_with_label(_("Favourite"));
+    /*
+     * The row's other controls are icon buttons, not labelled ones: five text buttons a row - this
+     * one plus "Favourite", "Up", "Down", "Rename" and "Remove" - asked for more width than the
+     * popover has, which squeezed the whole panel to its minimum. An icon says the same thing to a
+     * screen reader through the accessible name, and to a sighted user through the tooltip.
+     */
+    auto iconButton = [](const char* icon, const char* name, const char* tooltip) {
+        GtkWidget* btn = gtk_button_new_from_icon_name(icon, GTK_ICON_SIZE_BUTTON);
+        gtk_widget_add_css_class(btn, "xoj-control");
+        gtk_widget_add_css_class(btn, "xoj-focus-ring");
+        gtk_widget_set_tooltip_text(btn, tooltip);
+        atk_object_set_name(gtk_widget_get_accessible(btn), name);
+        return btn;
+    };
+
+    {  // Favourite: a toggle, so the star shows the state the preset is in.
+        GtkWidget* favorite = gtk_toggle_button_new();
         gtk_widget_add_css_class(favorite, "xoj-control");
         gtk_widget_add_css_class(favorite, "xoj-focus-ring");
+        gtk_widget_add_css_class(favorite, "xoj-preset-favorite");
+        GtkWidget* star = gtk_image_new_from_icon_name("xopp-star", GTK_ICON_SIZE_BUTTON);
+        gtk_button_set_image(GTK_BUTTON(favorite), star);
         gtk_widget_set_tooltip_text(favorite, isFavorite ? _("Remove from favourites") : _("Add to favourites"));
         atk_object_set_name(gtk_widget_get_accessible(favorite),
                             isFavorite ? _("Remove from favourites") : _("Add to favourites"));
@@ -355,21 +381,15 @@ auto ToolPropertyPanel::createPresetRow(const ToolPreset& preset, std::size_t fa
     }
 
     {  // Reorder: only the favourite order is displayed, so only favourites can be moved.
-        GtkWidget* up = gtk_button_new_with_label(_("Up"));
+        GtkWidget* up = iconButton("xopp-preset-up", _("Move up"), _("Move up in the favourites"));
         gtk_widget_set_sensitive(up, isFavorite && favoriteIndex > 0);
-        gtk_widget_add_css_class(up, "xoj-control");
-        gtk_widget_add_css_class(up, "xoj-focus-ring");
-        atk_object_set_name(gtk_widget_get_accessible(up), _("Move up"));
         auto* moveUp = new MoveData{this, preset.id, -1};
         g_object_weak_ref(G_OBJECT(up), freeMoveData, moveUp);
         g_signal_connect_data(up, "clicked", G_CALLBACK(onMovePresetClicked), moveUp, nullptr, GConnectFlags(0));
         gtk_box_append(GTK_BOX(row), up);
 
-        GtkWidget* down = gtk_button_new_with_label(_("Down"));
+        GtkWidget* down = iconButton("xopp-preset-down", _("Move down"), _("Move down in the favourites"));
         gtk_widget_set_sensitive(down, isFavorite && favoriteIndex + 1 < favoriteCount);
-        gtk_widget_add_css_class(down, "xoj-control");
-        gtk_widget_add_css_class(down, "xoj-focus-ring");
-        atk_object_set_name(gtk_widget_get_accessible(down), _("Move down"));
         auto* moveDown = new MoveData{this, preset.id, 1};
         g_object_weak_ref(G_OBJECT(down), freeMoveData, moveDown);
         g_signal_connect_data(down, "clicked", G_CALLBACK(onMovePresetClicked), moveDown, nullptr, GConnectFlags(0));
@@ -377,20 +397,14 @@ auto ToolPropertyPanel::createPresetRow(const ToolPreset& preset, std::size_t fa
     }
 
     {  // Rename
-        GtkWidget* rename = gtk_button_new_with_label(_("Rename"));
-        gtk_widget_add_css_class(rename, "xoj-control");
-        gtk_widget_add_css_class(rename, "xoj-focus-ring");
-        atk_object_set_name(gtk_widget_get_accessible(rename), _("Rename preset"));
+        GtkWidget* rename = iconButton("xopp-preset-rename", _("Rename preset"), _("Rename preset"));
         RowData* data = attachRowData(rename, this, preset.id);
         g_signal_connect_data(rename, "clicked", G_CALLBACK(onRenamePresetClicked), data, nullptr, GConnectFlags(0));
         gtk_box_append(GTK_BOX(row), rename);
     }
 
     {  // Remove, with a confirmation: there is no undo for a preset.
-        GtkWidget* remove = gtk_button_new_with_label(_("Remove"));
-        gtk_widget_add_css_class(remove, "xoj-control");
-        gtk_widget_add_css_class(remove, "xoj-focus-ring");
-        atk_object_set_name(gtk_widget_get_accessible(remove), _("Remove preset"));
+        GtkWidget* remove = iconButton("xopp-preset-remove", _("Remove preset"), _("Remove preset"));
         RowData* data = attachRowData(remove, this, preset.id);
         g_signal_connect_data(remove, "clicked", G_CALLBACK(onRemovePresetClicked), data, nullptr, GConnectFlags(0));
         gtk_box_append(GTK_BOX(row), remove);

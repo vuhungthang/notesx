@@ -606,6 +606,97 @@ class ToolPropertyPanelStructureTest: public GtkTest {
 TEST_F(ToolPropertyPanelStructureTest, thePenPanelIsOneLevelLabelledAndBoundToTheExistingActions) {}
 
 /*
+ * The preset rows carry the preset's name plus one control per action. As text buttons those five
+ * controls asked for more width than the popover has, which squeezed the whole panel down to its
+ * minimum: the width radio rows, the drawing types and the line styles all lost their room to the
+ * preset rows. As icon buttons they carry the same meaning through their accessible names, and the
+ * row asks for no more width than the panel has.
+ */
+class PresetRowWidthTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        ToolFixture fixture;
+        const fs::path settingsFile = freshSettingsFile("xournalpp-test-gtk_tool_properties_row_width");
+        Settings settings{settingsFile};  // a fresh profile seeds the built-in presets: three
+        // favourites, two not, which is the worst case the popover can be built with.
+        IconNameHelper icons{&settings};
+
+        ToolPropertyRegistry registry;
+        xoj::toolbar::addBuiltInToolPropertyProviders(registry, icons);
+        ASSERT_NE(registry.find(TOOL_PEN), nullptr);
+
+        GtkWidget* window = gtk_application_window_new(app);
+        StubPresetListListener presetsListener;
+        ToolPropertyPopoverFactory factory{fixture.adapter, settings, *registry.find(TOOL_PEN), GTK_WINDOW(window),
+                                           &presetsListener};
+        GtkWidget* popover = factory.createPopover();
+        ASSERT_NE(popover, nullptr);
+        GtkWidget* content = gtk_bin_get_child(GTK_BIN(popover));
+        ASSERT_NE(content, nullptr);
+
+        // The rows the panel built: one per preset, each carrying the preset's name.
+        std::vector<GtkWidget*> rows;
+        for (GtkWidget* widget: allWidgets(content)) {
+            if (hasCssClass(widget, "xoj-preset-row")) {
+                rows.emplace_back(widget);
+            }
+        }
+        ASSERT_FALSE(rows.empty()) << "the panel builds a row per preset";
+
+        /*
+         * The squeeze, as a number: a popover whose width is constrained by the screen lays its
+         * content out at the children's minimum widths, and the panel guarantees its content the
+         * CSS minimum of .xoj-tool-properties (260). With text buttons a preset row's minimum was
+         * the full text of six labels; with icon buttons and an ellipsized name it is the icons
+         * plus a "…" - the row no longer dictates the panel's width. (The harness loads no CSS, so
+         * this is the widget's own geometry, not the stylesheet's.)
+         */
+        for (GtkWidget* row: rows) {
+            std::size_t labelledButtons = 0;
+            for (GtkWidget* button: buttonsOf(row)) {
+                const std::string name = accessibleName(button);
+                EXPECT_FALSE(name.empty()) << "an icon button without an accessible name says nothing";
+                if (gtk_button_get_label(GTK_BUTTON(button)) != nullptr) {
+                    labelledButtons++;
+                }
+            }
+            EXPECT_EQ(labelledButtons, 1U)
+                    << "the preset's name is the row's only labelled control; the rest are icon buttons";
+        }
+
+        /*
+         * The squeeze, as a number: a popover whose width is constrained by the screen lays its
+         * content out at the children's minimum widths, and the panel guarantees its content the
+         * CSS minimum of .xoj-tool-properties (260). With text buttons a preset row's minimum was
+         * the full text of six labels; with icon buttons and an ellipsized name it is the icons
+         * plus a "…" - the row no longer dictates the panel's width. (The harness loads no CSS, so
+         * this is the widget's own geometry, not the stylesheet's.)
+         */
+        for (GtkWidget* row: rows) {
+            GtkRequisition minimum{};
+            gtk_widget_get_preferred_size(row, &minimum, nullptr);
+            EXPECT_LE(minimum.width, 260)
+                    << "a preset row's minimum width exceeds what the popover guarantees its content";
+        }
+
+        // A favourite toggle exists on every row and reports its preset's state.
+        std::size_t favoriteToggles = 0;
+        for (GtkWidget* row: rows) {
+            for (GtkWidget* button: buttonsOf(row)) {
+                if (GTK_IS_TOGGLE_BUTTON(button)) {
+                    favoriteToggles++;
+                }
+            }
+        }
+        EXPECT_EQ(favoriteToggles, rows.size()) << "every preset row carries a favourite toggle";
+
+        gtk_widget_destroy(popover);
+        gtk_widget_destroy(window);
+        fs::remove_all(settingsFile.parent_path());
+    }
+};
+TEST_F(PresetRowWidthTest, thePresetRowsAreIconButtonRowsThatFitThePanelWidth) {}
+
+/*
  * Plan 003, step 2 and step 3: the panel and the GActions that already own each value stay in step,
  * in both directions. A change made with a keyboard shortcut, a stylus button or a legacy toolbar
  * control has to reach the panel, and a change made in the panel has to reach the action.

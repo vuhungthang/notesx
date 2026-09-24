@@ -175,6 +175,30 @@ toolbar.editing {
 }
 
 /*
+ * The preset row is the densest row in the popover: the preset's name plus five controls. Its
+ * buttons are icon buttons (the name is the row's only text), so they take an icon's room rather
+ * than a label's: the row fits the panel's CSS minimum instead of widening the popover.
+ */
+.xoj-preset-row button {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0 4px;
+}
+
+/*
+ * The favourite toggle is an icon button, so its state is not in a label: the icon dims while the
+ * preset is not a favourite, which together with the tooltip's wording keeps the state readable
+ * without colour alone.
+ */
+.xoj-preset-favorite image {
+	opacity: 0.45;
+}
+
+.xoj-preset-favorite:checked image {
+	opacity: 1;
+}
+
+/*
  * The status line reports the result of the last preset action. A reader who
  * cannot see the list move reads it, so it is a status bar to ATK as well.
  */
