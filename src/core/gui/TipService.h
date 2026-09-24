@@ -152,6 +152,9 @@ private:
     /// Which tip is up, which is not the same as what the popover shows: the popover is built once.
     std::optional<Tip> shown;
 
+    /// The idle source of a popup that has not run yet, 0 when there is none.
+    gulong pendingPopup = 0;
+
     gulong clickedHandlerId = 0;
     gulong keyHandlerId = 0;
     gulong closedHandlerId = 0;

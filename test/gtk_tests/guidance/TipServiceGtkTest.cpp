@@ -318,6 +318,16 @@ void theTriggerOffersTheTipOnce(TipServiceFixture& test) {
     ASSERT_TRUE(tips->shownTip().has_value());
     EXPECT_EQ(*tips->shownTip(), TipService::Tip::ToolProperties);
 
+    /*
+     * The tip's popover is popped up from an idle, not from inside the map of the properties
+     * popover: popping a second popover up from within GTK's event delivery handed it a grab it
+     * could not finish consistently, which surfaced as
+     * "gtk_widget_event: assertion 'WIDGET_REALIZED_FOR_EVENT (widget, event)' failed" the moment
+     * the tip appeared (showToolProperties settles, so by here the idle has already run - what is
+     * asserted below about the idle itself is the popover's visibility, in TipPopupTimingTest).
+     */
+    EXPECT_TRUE(gtk_widget_get_visible(tips->getPopover())) << "after the main loop idles, the tip is up";
+
     // Anchored: the tip is shown against the thing it is about, not in a corner - and never against
     // the popover itself, which GTK3 cannot anchor another popover to: handed the popover, the tip
     // rendered as a misplaced dark slab over the panel it was about.
@@ -495,8 +505,75 @@ const TipScenario TIP_SCENARIOS[] = {
 
 INSTANTIATE_TEST_SUITE_P(TipScenarios, TipServiceFixture, ::testing::ValuesIn(TIP_SCENARIOS));
 
-/// The scenarios are the tests: each one runs the window, the profile and what the user does.
+/// The scenario tests are the tests: each one runs the window, the profile and what the user does.
 TEST_P(TipServiceFixture, theScenario) {}
+
+/*
+ * The popup of a tip is deferred to an idle: offering one from inside GTK's event delivery - the
+ * map of a tool's property popover, the clicked of a preset button - popped the second popover up
+ * in the middle of a grab GTK could not finish, which surfaced as the critical
+ * "gtk_widget_event: assertion 'WIDGET_REALIZED_FOR_EVENT (widget, event)' failed" at the exact
+ * moment the tip appeared. The offer itself records the tip; only the popup waits for the main
+ * loop, and by then GTK owns its event sequence again.
+ */
+class TipPopupTimingTest: public GtkTest {
+    void runTest(GtkApplication* app) override {
+        this->glade = std::make_unique<GladeSearchpath>();
+        this->glade->addSearchDirectory(GET_UI_FOLDER);
+        this->glade->addSearchDirectory(GET_PAGE_TEMPLATE_FOLDER);
+
+        this->control = std::make_unique<Control>(G_APPLICATION(app), this->glade.get(), true);
+        this->win = std::make_unique<MainWindow>(this->glade.get(), this->control.get(), GTK_APPLICATION(app));
+        this->control->initWindow(this->win.get());
+        this->win->populate(this->glade.get());
+        this->win->show(nullptr);
+        settle();
+        for (size_t i = 0; i < 2; i++) {
+            this->control->insertPage(std::make_shared<XojPage>(595.28, 841.89), i, false);
+        }
+        this->win->showEditor();
+        settle();
+
+        Settings* settings = this->control->getSettings();
+        settings->resetInterfaceTips();
+        settings->setInterfaceTipsEnabled(true);
+        TipService* tips = this->win->getTipService();
+        ASSERT_NE(tips, nullptr);
+        GtkWidget* anchor = this->win->getXournal()->getWidget();
+
+        // The offer records the tip but does not pop its popover: not synchronously, at least.
+        tips->offer(TipService::Tip::ToolProperties, anchor);
+        EXPECT_TRUE(tips->shownTip().has_value()) << "the offer is recorded immediately";
+        EXPECT_FALSE(gtk_widget_get_visible(tips->getPopover()))
+                << "the popover is not popped up inside the caller's stack";
+
+        // One idle later it is up: the deferral is a main-loop turn, not a delay a user waits out.
+        while (!gtk_widget_get_visible(tips->getPopover())) {
+            ASSERT_TRUE(g_main_context_iteration(nullptr, TRUE)) << "the main loop still runs";
+        }
+        EXPECT_TRUE(tips->isShown());
+
+        // And a dismissal before the idle would have run leaves nothing to appear afterwards.
+        tips->dismiss();
+        settle();
+        EXPECT_FALSE(tips->isShown());
+        for (int i = 0; i < 10 && g_main_context_pending(nullptr); i++) {
+            while (g_main_context_iteration(nullptr, FALSE)) {}
+        }
+        EXPECT_FALSE(gtk_widget_get_visible(tips->getPopover()))
+                << "a dismissed tip's popup cannot appear after its dismissal";
+
+        this->win.reset();
+        this->control.reset();
+        this->glade.reset();
+    }
+
+public:
+    std::unique_ptr<GladeSearchpath> glade;
+    std::unique_ptr<Control> control;
+    std::unique_ptr<MainWindow> win;
+};
+TEST_F(TipPopupTimingTest, theTipPopsUpFromAnIdleAndNeverInsideTheCaller) {}
 
 /*
  * A tip's id is what the profile remembers, so it is the part that must not change: rewording a tip

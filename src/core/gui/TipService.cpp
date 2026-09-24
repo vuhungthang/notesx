@@ -187,8 +187,14 @@ TipService::~TipService() {
     /*
      * A tip that is still up when its window goes is put away here, while its widgets are alive, by
      * hiding it rather than popping it down: a pop-down is a transition, and a destructor must not
-     * leave an animation to finish on a window that is going away.
+     * leave an animation to finish on a window that is going away. A popup that never ran is
+     * cancelled for the same reason - an idle that fires after this destructor would pop up a
+     * popover whose service is gone.
      */
+    if (this->pendingPopup != 0) {
+        g_source_remove(this->pendingPopup);
+        this->pendingPopup = 0;
+    }
     if (this->window != nullptr && of(this->window) == this) {
         g_object_set_data(G_OBJECT(this->window), TIP_SERVICE_DATA_KEY, nullptr);
     }
@@ -210,6 +216,12 @@ void TipService::offer(Tip tip, GtkWidget* anchor, TurnOffAction turnOff) {
     if (gtk_widget_is_visible(this->popover.get())) {
         gtk_popover_popdown(GTK_POPOVER(this->popover.get()));
     }
+    // And a popup that has not run yet cannot outlive the offer it belonged to: the idle below is
+    // the only one on its way to the screen.
+    if (this->pendingPopup != 0) {
+        g_source_remove(this->pendingPopup);
+        this->pendingPopup = 0;
+    }
 
     this->turnOff = std::move(turnOff);
     if (this->turnOffButton) {
@@ -219,7 +231,33 @@ void TipService::offer(Tip tip, GtkWidget* anchor, TurnOffAction turnOff) {
     this->shown = tip;
     gtk_label_set_text(GTK_LABEL(this->text.get()), textOf(tip));
     this->placeAgainst(anchor);
-    gtk_popover_popup(GTK_POPOVER(this->popover.get()));
+    /*
+     * Popped up from the main context, not from inside the caller: a tip's moments are the moments
+     * something is being shown - a tool's property popover mapping, a preset being applied - and
+     * those arrive inside GTK's own event handling (the "map" of a popover, a button's "clicked").
+     * Popping a second popover up from within that delivery hands GTK a grab and a pointer event
+     * sequence it cannot finish consistently, which surfaces as
+     * "gtk_widget_event: assertion 'WIDGET_REALIZED_FOR_EVENT (widget, event)' failed" the moment
+     * the tip appears. An idle callback runs once GTK is back in charge of its own event loop, and
+     * the pointer events around the tip are then ordinary events for a realized, mapped popover.
+     *
+     * The callback holds the service itself, not its popover: the id is cleared the moment the
+     * callback runs, and a service that is destroyed before then has the source cancelled in its
+     * destructor - the callback can never run on a service that is gone.
+     */
+    this->pendingPopup = g_idle_add_full(G_PRIORITY_HIGH_IDLE,
+                                         +[](gpointer data) -> gboolean {
+                                             TipService* self = static_cast<TipService*>(data);
+                                             // The source is running, so it is already gone from
+                                             // the context: forget the id before anything dismisses
+                                             // the tip and tries to remove it a second time.
+                                             self->pendingPopup = 0;
+                                             if (!gtk_widget_get_visible(self->popover.get())) {
+                                                 gtk_popover_popup(GTK_POPOVER(self->popover.get()));
+                                             }
+                                             return G_SOURCE_REMOVE;
+                                         },
+                                         this, nullptr);
 }
 
 void TipService::placeAgainst(GtkWidget* anchor) {
@@ -238,6 +276,12 @@ void TipService::placeAgainst(GtkWidget* anchor) {
 }
 
 void TipService::dismiss() {
+    // A popup that has not run yet is not a tip any more: cancelled here, it cannot appear after
+    // the user has already put it away (or after the offer was replaced by a newer one).
+    if (this->pendingPopup != 0) {
+        g_source_remove(this->pendingPopup);
+        this->pendingPopup = 0;
+    }
     const std::optional<Tip> tip = this->shown;
     if (this->popover != nullptr && gtk_widget_is_visible(this->popover.get())) {
         gtk_popover_popdown(GTK_POPOVER(this->popover.get()));
