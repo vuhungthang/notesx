@@ -148,7 +148,13 @@ toolbar.editing {
 }
 
 .xoj-tool-properties {
-	min-width: 260px;
+	/*
+	 * Wide enough that the panel reads as one calm column: the radio labels ("Draw Rectangle",
+	 * "Stroke recognizer") keep their room, and a preset's name is cut by the name button's own
+	 * ellipsis rather than by the panel running out. 340px is the floor, not the width - longer
+	 * content still grows the popover.
+	 */
+	min-width: 340px;
 }
 
 .xoj-property-header {

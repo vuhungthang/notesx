@@ -666,7 +666,7 @@ class PresetRowWidthTest: public GtkTest {
         /*
          * The squeeze, as a number: a popover whose width is constrained by the screen lays its
          * content out at the children's minimum widths, and the panel guarantees its content the
-         * CSS minimum of .xoj-tool-properties (260). With text buttons a preset row's minimum was
+         * CSS minimum of .xoj-tool-properties (340). With text buttons a preset row's minimum was
          * the full text of six labels; with icon buttons and an ellipsized name it is the icons
          * plus a "…" - the row no longer dictates the panel's width. (The harness loads no CSS, so
          * this is the widget's own geometry, not the stylesheet's.)
@@ -674,7 +674,7 @@ class PresetRowWidthTest: public GtkTest {
         for (GtkWidget* row: rows) {
             GtkRequisition minimum{};
             gtk_widget_get_preferred_size(row, &minimum, nullptr);
-            EXPECT_LE(minimum.width, 260)
+            EXPECT_LE(minimum.width, 340)
                     << "a preset row's minimum width exceeds what the popover guarantees its content";
         }
 

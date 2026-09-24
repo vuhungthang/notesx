@@ -334,7 +334,7 @@ auto ToolPropertyPanel::createPresetRow(const ToolPreset& preset, std::size_t fa
             // one the popover grows to. Together a long name reads as "Black fine p…" instead of
             // widening the panel; the full name is in the tooltip.
             gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
-            gtk_label_set_max_width_chars(GTK_LABEL(label), 12);
+            gtk_label_set_max_width_chars(GTK_LABEL(label), 22);
         }
         gtk_widget_add_css_class(apply, "xoj-control");
         gtk_widget_add_css_class(apply, "xoj-focus-ring");
